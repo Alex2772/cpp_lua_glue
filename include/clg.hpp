@@ -490,3 +490,12 @@ static std::string clg::any_to_string(lua_State* l, int n) {
 
     return ss.str();
 }
+
+template<typename... Args>
+void clg::table_view::value_view::invokeNullsafe(Args&& ... args) {
+
+    auto r = ref();
+    if (r.isFunction()) {
+        clg::function(std::move(r))(std::forward<Args>(args)...);
+    }
+}
