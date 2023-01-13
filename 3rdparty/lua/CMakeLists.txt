@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
 
-option(LUA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lua-5.4.4")
-
 project(lua)
 
 include(lua.cmake)
