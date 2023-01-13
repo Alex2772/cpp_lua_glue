@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.18)
 
 project(clg)
 
-SET(LUA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3rdparty/lua-5.4.4")
-
 add_library(clg INTERFACE)
 target_include_directories(clg INTERFACE include)
 
