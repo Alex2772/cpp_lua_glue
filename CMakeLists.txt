@@ -11,11 +11,10 @@ SET(LUAJIT_BUILD_EXE OFF)
 
 add_subdirectory(3rdparty/lua)
 
-# if(LUAJIT_DIR)
-#     target_link_libraries(clg INTERFACE libluajit)
-#     target_include_directories(clg INTERFACE ${LUAJIT_DIR}/src)
-# else
-if(LUA_DIR)
+if(LUAJIT_DIR)
+    target_link_libraries(clg INTERFACE libluajit)
+    target_include_directories(clg INTERFACE ${LUAJIT_DIR}/src)
+elseif(LUA_DIR)
     target_link_libraries(clg INTERFACE lualib)
     target_include_directories(clg INTERFACE ${LUA_DIR}/src)
 endif()
