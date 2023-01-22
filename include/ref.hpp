@@ -5,6 +5,7 @@
 #include "value.hpp"
 #include <cassert>
 #include <algorithm>
+#include <optional>
 
 namespace clg {
     class ref {
@@ -137,6 +138,22 @@ namespace clg {
             } catch (...) {
                 lua_pop(mLua, 1);
                 throw;
+            }
+            throw std::runtime_error("should not reach here");
+        }
+
+        template<typename T>
+        std::optional<T> is() const {
+            assert(!isNull());
+            stack_integrity_check check(mLua);
+            push_value_to_stack();
+            try {
+                auto v = clg::get_from_lua<T>(mLua, -1);
+                lua_pop(mLua, 1);
+                return v;
+            } catch (...) {
+                lua_pop(mLua, 1);
+                return std::nullopt;
             }
             throw std::runtime_error("should not reach here");
         }
