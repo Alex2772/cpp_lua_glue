@@ -214,6 +214,9 @@ namespace clg {
                 lua_pop(L, 1);
                 return t;
             }
+
+            template<typename... Args>
+            void invokeNullsafe(Args&&... args);
         private:
             const table_view& table;
             std::string_view name;

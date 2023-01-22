@@ -11,3 +11,4 @@ add_subdirectory(3rdparty/lua)
 
 target_link_libraries(clg INTERFACE lualib)
 target_include_directories(clg INTERFACE ${LUA_DIR}/src)
+
