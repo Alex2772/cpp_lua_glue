@@ -41,12 +41,6 @@ IF(NOT WIN32)
     LIST(APPEND LIBS ${DL_LIBRARY})
   ENDIF()
   CHECK_FUNCTION_EXISTS(dlopen LUA_USE_DLOPEN)
-  IF(NOT LUA_USE_DLOPEN)
-    MESSAGE(FATAL_ERROR "Cannot compile a useful lua.
-Function dlopen() seems not to be supported on your platform.
-Apparently you are not on a Windows platform as well.
-So lua has no way to deal with shared libraries!")
-  ENDIF()
 ENDIF()
 
 CHECK_LIBRARY_EXISTS(m sin "" LUA_USE_LIBM)
