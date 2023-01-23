@@ -442,7 +442,7 @@ namespace clg {
 #include "table.hpp"
 #include "object_expose.hpp"
 
-static std::string clg::any_to_string(lua_State* l, int n) {
+std::string clg::any_to_string(lua_State* l, int n) {
     std::stringstream ss;
 
     bool metatableDetected = false;

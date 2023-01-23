@@ -182,7 +182,7 @@ namespace clg {
                         return;
                     }
 
-                    auto& object = reinterpret_cast<shared_ptr_helper*>(lua_touserdata(L, -1))->as<T>();
+                    auto object = reinterpret_cast<shared_ptr_helper*>(lua_touserdata(L, -1))->as<T>();
 
                     impl::invoke_handle_lua_virtual_func_assignment(*object.get(), key, std::move(value));
                     lua_pop(L, 1);
