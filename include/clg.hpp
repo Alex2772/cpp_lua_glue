@@ -16,6 +16,7 @@
 #include <cstring>
 #include <thread>
 #include <sstream>
+#include "any_wrap.hpp"
 
 namespace clg {
     template<class C>
@@ -252,12 +253,11 @@ namespace clg {
             }
         };
 
-        explicit state_interface(lua_State* state) : mState(state) {
+        state_interface(lua_State* state) : mState(state) {
 
         }
 
-        void init_global_functions() {
-        }
+        void init_global_functions();
 
 
         template<class C>
@@ -498,4 +498,7 @@ void clg::table_view::value_view::invokeNullsafe(Args&& ... args) {
     if (r.isFunction()) {
         clg::function(std::move(r))(std::forward<Args>(args)...);
     }
+}
+void clg::state_interface::init_global_functions() {
+    register_class<any_wrap>();
 }

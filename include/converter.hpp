@@ -88,6 +88,20 @@ namespace clg {
     };
 
     template<>
+    struct converter<lua_CFunction> {
+        static lua_CFunction from_lua(lua_State* l, int n) {
+            if (!lua_iscfunction(l, n)) {
+                detail::throw_converter_error(l, n, "not a cfunction");
+            }
+            return lua_tocfunction(l, n);
+        }
+        static int to_lua(lua_State* l, lua_CFunction v) {
+            lua_pushcfunction(l, v);
+            return 1;
+        }
+    };
+
+    template<>
     struct converter<const char*> {
         static const char* from_lua(lua_State* l, int n) {
             if (!lua_isstring(l, n)) {
@@ -100,6 +114,8 @@ namespace clg {
             return 1;
         }
     };
+
+
     template<>
     struct converter<void*> {
         static void* from_lua(lua_State* l, int n) {
