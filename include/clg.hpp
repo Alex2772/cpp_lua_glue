@@ -16,7 +16,6 @@
 #include <cstring>
 #include <thread>
 #include <sstream>
-#include "any_wrap.hpp"
 
 namespace clg {
     template<class C>
@@ -491,6 +490,7 @@ std::string clg::any_to_string(lua_State* l, int n) {
     return ss.str();
 }
 
+#include "any_wrap.hpp"
 template<typename... Args>
 void clg::table_view::value_view::invokeNullsafe(Args&& ... args) {
 
