@@ -37,18 +37,20 @@ namespace clg {
      */
     struct stack_integrity_check {
     public:
-        stack_integrity_check(lua_State* lua): mLua(lua) {
-            mStack = lua_gettop(mLua);
+        stack_integrity_check(lua_State* lua, int expectedDifference = 0): mLua(lua), mExpectedDifference(expectedDifference) {
+            mStackBegin = lua_gettop(mLua);
         }
 
         ~stack_integrity_check() {
-            auto current = lua_gettop(mLua);
-            assert(current == mStack);
+            auto stackEnd = lua_gettop(mLua);
+            const auto actualDifference = stackEnd - mStackBegin;
+            assert(actualDifference == mExpectedDifference);
         }
 
     private:
         lua_State* mLua;
-        int mStack;
+        int mStackBegin;
+        int mExpectedDifference;
     };
 
 

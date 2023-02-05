@@ -97,6 +97,7 @@ namespace clg {
         }
 
         static void push_shared_ptr_userdata(lua_State* l, std::shared_ptr<T> v) {
+            clg::stack_integrity_check c(l, 1);
             auto classname = clg::class_name<T>();
             auto t = reinterpret_cast<shared_ptr_helper*>(lua_newuserdata(l, sizeof(shared_ptr_helper)));
             new(t) shared_ptr_helper(std::move(v));
@@ -117,6 +118,7 @@ namespace clg {
         }
 
         static void push_weak_ptr_userdata(lua_State* l, std::weak_ptr<T> v) {
+            clg::stack_integrity_check c(l, 1);
             auto classname = clg::class_name<T>();
             auto t = reinterpret_cast<weak_ptr_helper*>(lua_newuserdata(l, sizeof(weak_ptr_helper)));
             new(t) weak_ptr_helper(std::move(v));
