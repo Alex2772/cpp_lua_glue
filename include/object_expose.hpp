@@ -215,13 +215,6 @@ namespace clg {
                     push_weak_ptr_userdata(l, v);
 
                     if constexpr (use_lua_self) {
-                        const static std::string FUNC_NAME = std::string("__clg_virtual_func_") + typeid(T).name();
-                        auto f = clg::state_interface(l).global_function(FUNC_NAME);
-                        if (f.isNull()) {
-                            clg::state_interface(l).register_function<handle_virtual_func>(FUNC_NAME);
-                            f = clg::state_interface(l).global_function(FUNC_NAME);
-                        }
-
                         auto r = clg::ref::from_cpp(l, clg::table{});
                         r.set_metatable(clg::table{
                                { "__index", clg::ref::from_stack(l) },
@@ -230,7 +223,7 @@ namespace clg {
 
                         clg::push_to_lua(l, clg::table{
                                 {"__index",    std::move(r)},
-                                {"__newindex", std::move(f.mRef)},
+                                {"__newindex", clg::ref::from_cpp(l, clg::cfunction<handle_virtual_func>())},
                         });
                     } else {
                         clg::push_to_lua(l, clg::table{

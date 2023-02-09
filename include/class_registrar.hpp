@@ -76,8 +76,8 @@ namespace clg {
                     (self.get()->*methodPtr)(std::move(args)...);
                     return {};
                 }
-                using my_instance = typename state_interface::register_function_helper<typename class_info::return_t, std::shared_ptr<C>, Args...>::template instance<method>;
-                using my_instance_builder = typename state_interface::register_function_helper<clg::builder_return_type, std::shared_ptr<C>, Args...>::template instance<builder_method>;
+                using my_instance = typename clg::detail::register_function_helper<typename class_info::return_t, std::shared_ptr<C>, Args...>::template instance<method>;
+                using my_instance_builder = typename clg::detail::register_function_helper<clg::builder_return_type, std::shared_ptr<C>, Args...>::template instance<builder_method>;
             };
 
             using wrapper_function_helper = wrapper_function_helper_t<typename class_info::args>;
@@ -105,8 +105,8 @@ namespace clg {
                         return method(std::move(args)...);
                     }
                 }
-                using my_instance = typename state_interface::register_function_helper<typename class_info::return_t, void*, Args...>::template instance<static_method>;
-                using my_instance_no_this = typename state_interface::register_function_helper<typename class_info::return_t, Args...>::template instance<static_method_no_this>;
+                using my_instance = typename clg::detail::register_function_helper<typename class_info::return_t, void*, Args...>::template instance<static_method>;
+                using my_instance_no_this = typename clg::detail::register_function_helper<typename class_info::return_t, Args...>::template instance<static_method_no_this>;
             };
 
             using wrapper_function_helper = wrapper_function_helper_t<typename class_info::args>;
@@ -226,7 +226,7 @@ namespace clg {
 
         template<typename... Args>
         class_registrar<C>& constructor() {
-            using my_register_function_helper = clg::state_interface::register_function_helper<std::shared_ptr<C>, void*, Args...>;
+            using my_register_function_helper = clg::detail::register_function_helper<std::shared_ptr<C>, void*, Args...>;
             using my_instance = typename my_register_function_helper::template instance<constructor_helper<Args...>::construct>;
 
             mConstructors.push_back({

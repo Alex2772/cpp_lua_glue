@@ -18,4 +18,9 @@ namespace clg {
         using clg_exception::clg_exception;
         ~lua_exception() override = default;
     };
+
+
+    struct substitution_error: clg_exception {
+        using clg_exception::clg_exception;
+    };
 }
