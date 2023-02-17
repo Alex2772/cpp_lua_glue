@@ -9,6 +9,7 @@
 #include "util.hpp"
 #include "shared_ptr_helper.hpp"
 #include <tuple>
+#include <variant>
 
 namespace clg {
 
@@ -212,5 +213,30 @@ namespace clg {
         }
 
         void push() {}
+    };
+
+    template<typename... Types>
+    struct converter<std::variant<Types...>> {
+        template<typename T, typename... T2>
+        static std::variant<Types...> from_lua_recursive(lua_State* l, int n) {
+            try {
+                return clg::get_from_lua<T>(l, n);
+            } catch (...) {
+                if constexpr (sizeof...(T2) == 0) {
+                    throw clg::converter_error("unable to convert to variant type");
+                } else {
+                    return from_lua_recursive<T2...>(l, n);
+                }
+            }
+        }
+
+        static std::variant<Types...> from_lua(lua_State* l, int n) {
+            return from_lua_recursive<Types...>(l, n);
+        }
+        static int to_lua(lua_State* l, const std::variant<Types...>& types) {
+            return std::visit([&](const auto& v) {
+                return clg::push_to_lua(l, v);
+            }, types);
+        }
     };
 }
