@@ -77,9 +77,24 @@ namespace clg {
         static clg::table_array from_lua(lua_State* l, int n) {
             clg::table_array result;
             auto t = converter<table>::from_lua(l, n);
-            result.reserve(t.size());
-            for (auto&[_, value] : t) {
-                result.push_back(std::move(value));
+            result.resize(t.size());
+            for (auto&[key, value] : t) {
+                //if keys are indexes try order them
+                unsigned long long index;
+                try {
+                    index = std::stoull(key);
+                } catch (const std::invalid_argument& e){
+                    //just write everything as it is
+                    size_t i = 0;
+                    for (auto&[_, v] : t) {
+                        result[i] = std::move(v);
+                        i++;
+                    }
+
+                    return result;
+                }
+
+                result[index - 1] = value;
             }
             return result;
         }
