@@ -101,19 +101,32 @@ namespace clg {
         }
 
         void do_call(unsigned args, int results) const {
-            if (lua_pcall(mLua, args, results, 0)) {
-                if (error_callback()) {
-                    error_callback()();
-                    return;
-                }
-                auto s = any_to_string(mLua);
-                throw lua_exception("failed to call " + mRef.debug_str() + ": " + s);
+            // insert error handler before args
+            int argsDelta = lua_gettop(mLua) - args;
+            lua_pushcfunction(mLua, error_handler);
+            lua_insert(mLua, argsDelta);
+
+            auto status = lua_pcall(mLua, args, results, argsDelta);
+
+            // remove inserted error handler
+            lua_remove(mLua, argsDelta);
+
+            if (status) {
+                throw lua_exception("failed to call " + mRef.debug_str());
             }
         }
 
         static std::function<void()>& error_callback() {
             static std::function<void()> v;
             return v;
+        }
+
+    private:
+        static int error_handler(lua_State* l) {
+            if (error_callback()) {
+                error_callback()();
+            }
+            return 0;
         }
     };
 
