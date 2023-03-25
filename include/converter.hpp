@@ -67,10 +67,12 @@ namespace clg {
             if (!lua_isstring(l, n)) {
                 detail::throw_converter_error(l, n, "not a string");
             }
-            return lua_tostring(l, n);
+            std::size_t len;
+            auto data = lua_tolstring(l, n, &len);
+            return { data, len };
         }
         static int to_lua(lua_State* l, const std::string& v) {
-            lua_pushstring(l, v.c_str());
+            lua_pushlstring(l, v.c_str(), v.length());
             return 1;
         }
     };
@@ -80,10 +82,12 @@ namespace clg {
             if (!lua_isstring(l, n)) {
                 detail::throw_converter_error(l, n, "not a string");
             }
-            return lua_tostring(l, n);
+            std::size_t len;
+            auto data = lua_tolstring(l, n, &len);
+            return { data, len };
         }
         static int to_lua(lua_State* l, std::string_view v) {
-            lua_pushstring(l, std::string(v).c_str());
+            lua_pushlstring(l, v.data(), v.length());
             return 1;
         }
     };
