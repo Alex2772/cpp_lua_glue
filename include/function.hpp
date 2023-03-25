@@ -59,6 +59,7 @@ namespace clg {
 
         template<typename Return, typename... Args>
         Return call(Args&& ... args) const {
+            lua_settop(mLua, 0);
             stack_integrity_check stack(mLua);
             push_function_to_be_called();
 
@@ -112,6 +113,7 @@ namespace clg {
             lua_remove(mLua, argsDelta);
 
             if (status) {
+                lua_settop(mLua, 0);
                 throw lua_exception("failed to call " + mRef.debug_str());
             }
         }
