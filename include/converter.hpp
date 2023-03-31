@@ -27,7 +27,10 @@ namespace clg {
     }
 
     template<typename T, typename EnableIf=void>
-    struct converter {
+    struct converter;
+
+    template<typename T>
+    struct converter<T, std::enable_if_t<std::is_integral_v<T> || std::is_floating_point_v<T> || std::is_enum_v<T>>> {
         static T from_lua(lua_State* l, int n) {
             if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T> || std::is_enum_v<T>) {
 #ifdef lua_isinteger

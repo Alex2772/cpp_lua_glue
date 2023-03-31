@@ -21,3 +21,10 @@ namespace clg {
     }
 
 }
+
+// silence overflow warnings
+#undef lua_pop
+#define lua_pop(L,n) lua_settop(L, static_cast<int>(-(n)-1)) // silence overflow warning
+
+#undef luaL_newlibtable
+#define luaL_newlibtable(L,l) lua_createtable(L, 0, int(sizeof(l)/sizeof((l)[0]) - 1))

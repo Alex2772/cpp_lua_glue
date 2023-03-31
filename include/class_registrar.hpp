@@ -225,7 +225,7 @@ namespace clg {
 
 
         template<typename... Args>
-        class_registrar<C>& constructor() {
+        class_registrar<C>& constructor() noexcept {
             using my_register_function_helper = clg::detail::register_function_helper<std::shared_ptr<C>, void*, Args...>;
             using my_instance = typename my_register_function_helper::template instance<constructor_helper<Args...>::construct>;
 

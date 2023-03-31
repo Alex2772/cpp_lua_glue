@@ -37,7 +37,7 @@ namespace clg {
 
             template<function_t f, bool passthroughSubstitutionError = false>
             struct instance {
-                static int call(lua_State* s) noexcept(!passthroughSubstitutionError) {
+                static int call(lua_State* s) {
                     clg::checkThread();
                     try {
                         size_t argsCount = lua_gettop(s);
