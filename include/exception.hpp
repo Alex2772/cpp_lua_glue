@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <functional>
 #include <stdexcept>
 
 namespace clg {
@@ -12,6 +13,7 @@ namespace clg {
     public:
         using std::runtime_error::runtime_error;
         ~clg_exception() override = default;
+        static inline std::function<void(std::exception_ptr)> errorCallback;
     };
     class lua_exception: public clg_exception {
     public:
