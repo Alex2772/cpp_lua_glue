@@ -182,6 +182,8 @@ namespace clg {
     template<typename T>
     static T get_from_lua(lua_State* l, unsigned index) {
         clg::checkThread();
+
+        // incomplete type 'clg::converter<...>' error here means converter is not defined or not reachable (missing #include)
         return converter<T>::from_lua(l, index);
     }
 
