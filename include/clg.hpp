@@ -346,7 +346,10 @@ namespace clg {
 #include "table.hpp"
 #include "object_expose.hpp"
 
-std::string clg::any_to_string(lua_State* l, int n) {
+std::string clg::any_to_string(lua_State* l, int n, int depth) {
+    if (depth <= 0) {
+        return "<depth exceeded>";
+    }
     std::stringstream ss;
 
     bool metatableDetected = false;
@@ -371,7 +374,7 @@ std::string clg::any_to_string(lua_State* l, int n) {
                 ss << ", ";
             }
             v.push_value_to_stack();
-            ss << "\"" << k << "\": " << any_to_string(l);
+            ss << "\"" << k << "\": " << any_to_string(l, -1, depth - 1);
             lua_pop(l, 1);
         }
         ss << " }";
@@ -387,7 +390,7 @@ std::string clg::any_to_string(lua_State* l, int n) {
 
     if (lua_getmetatable(l, n)) {
         assert(metatableDetected);
-        ss << ", " << any_to_string(l) << " ]";
+        ss << ", " << any_to_string(l, -1, depth - 1) << " ]";
         lua_pop(l, 1);
     }
 

@@ -13,7 +13,7 @@
 
 namespace clg {
 
-    std::string any_to_string(lua_State* l, int n = -1);
+    std::string any_to_string(lua_State* l, int n = -1, int depth = 8);
 
     struct converter_error: clg_exception {
         using clg_exception::clg_exception;
