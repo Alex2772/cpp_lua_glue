@@ -152,7 +152,7 @@ namespace clg {
                 lua_pop(mLua, 1);
                 return v;
             } catch (...) {
-                lua_pop(mLua, 1);
+                check.fixStack();
                 return std::nullopt;
             }
             throw std::runtime_error("should not reach here");

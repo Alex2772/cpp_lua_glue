@@ -47,6 +47,14 @@ namespace clg {
             assert(actualDifference == mExpectedDifference);
         }
 
+        void fixStack() {
+            // конечно костыль ебейший, но когда в стеке происходит НЁХ это оказывается наиболее простым и надёжным
+            // решением.
+            auto stackEnd = lua_gettop(mLua);
+            const auto actualDifference = stackEnd - mStackBegin;
+            lua_pop(mLua, (actualDifference - mExpectedDifference));
+        }
+
     private:
         lua_State* mLua;
         int mStackBegin;
