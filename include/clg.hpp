@@ -346,7 +346,7 @@ namespace clg {
 #include "table.hpp"
 #include "object_expose.hpp"
 
-std::string clg::any_to_string(lua_State* l, int n, int depth) {
+inline std::string clg::any_to_string(lua_State* l, int n, int depth) {
     if (depth <= 0) {
         return "<depth exceeded>";
     }
@@ -407,6 +407,7 @@ void clg::table_view::value_view::invokeNullsafe(Args&& ... args) {
         clg::function(std::move(r))(std::forward<Args>(args)...);
     }
 }
-void clg::state_interface::init_global_functions() {
+
+inline void clg::state_interface::init_global_functions() {
     register_class<any_wrap>();
 }
