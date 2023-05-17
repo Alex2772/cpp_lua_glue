@@ -77,9 +77,15 @@ namespace clg {
                         if constexpr (passthroughSubstitutionError) {
                             throw;
                         }
+                        if (clg_exception::errorCallback) {
+                            clg_exception::errorCallback(std::current_exception());
+                        }
                         luaL_error(s, "cpp exception: %s", e.what());
                         return 0;
                     } catch (const std::exception& e) {
+                        if (clg_exception::errorCallback) {
+                            clg_exception::errorCallback(std::current_exception());
+                        }
                         luaL_error(s, "cpp exception: %s", e.what());
                         return 0;
                     }
