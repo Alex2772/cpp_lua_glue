@@ -21,7 +21,7 @@ namespace clg {
         int status;
         auto c = abi::__cxa_demangle(s.c_str(), 0, 0, &status);
         s = c;
-        delete[] c;
+        free(c);
 #endif
 
         auto it = std::find_if(s.rbegin(),  s.rend(), [](char c) {
