@@ -77,10 +77,16 @@ namespace clg {
                         if constexpr (passthroughSubstitutionError) {
                             throw;
                         }
+                        if (clg::function::exception_callback()) {
+                            clg::function::exception_callback()();
+                        }
                         clg::push_to_lua(s, nullptr);
                         clg::push_to_lua(s, "no such overloaded function");
                         return 2;
                     } catch (const std::exception& e) {
+                        if (clg::function::exception_callback()) {
+                            clg::function::exception_callback()();
+                        }
                         clg::push_to_lua(s, nullptr);
                         clg::push_to_lua(s, e.what());
                         return 2;

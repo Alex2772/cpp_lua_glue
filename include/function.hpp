@@ -123,6 +123,11 @@ namespace clg {
             return v;
         }
 
+        static std::function<void()>& exception_callback() {
+            static std::function<void()> v;
+            return v;
+        }
+
     private:
         static int error_handler(lua_State* l) {
             if (error_callback()) {
