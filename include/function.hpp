@@ -67,15 +67,20 @@ namespace clg {
 
             if constexpr (std::is_same_v < Return, clg::dynamic_result >) {
                 do_call(sizeof...(args), LUA_MULTRET);
-                return get_from_lua<Return>(mLua);
+                auto r = get_from_lua<Return>(mLua);
+                lua_settop(mLua, 0);
+                return r;
             } else if constexpr (std::is_same_v < Return, void >) {
                 do_call(sizeof...(args), 0);
+                lua_settop(mLua, 0);
             } else {
                 do_call(sizeof...(args), 1);
                 if (lua_gettop(mLua) != 1) {
                     throw clg::clg_exception(std::string("a function is expected to return ") + typeid(Return).name() + "; nothing returned");
                 }
-                return get_from_lua<Return>(mLua);
+                auto r = get_from_lua<Return>(mLua);
+                lua_settop(mLua, 0);
+                return r;
             }
         }
 
