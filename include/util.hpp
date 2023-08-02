@@ -61,6 +61,13 @@ namespace clg {
         int mExpectedDifference;
     };
 
+    struct stack_integrity_fix: stack_integrity_check {
+    public:
+        ~stack_integrity_fix() {
+            fixStack();
+        }
+    };
+
 
     static void print_stack(lua_State* L) {
         int top=lua_gettop(L);

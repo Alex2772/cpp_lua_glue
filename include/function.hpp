@@ -60,27 +60,22 @@ namespace clg {
         template<typename Return, typename... Args>
         Return call(Args&& ... args) const {
             lua_settop(mLua, 0);
-            stack_integrity_check stack(mLua);
+            stack_integrity_fix stack(mLua);
             push_function_to_be_called();
 
             push(std::forward<Args>(args)...);
 
             if constexpr (std::is_same_v < Return, clg::dynamic_result >) {
                 do_call(sizeof...(args), LUA_MULTRET);
-                auto r = get_from_lua<Return>(mLua);
-                lua_settop(mLua, 0);
-                return r;
+                return get_from_lua<Return>(mLua);
             } else if constexpr (std::is_same_v < Return, void >) {
                 do_call(sizeof...(args), 0);
-                lua_settop(mLua, 0);
             } else {
                 do_call(sizeof...(args), 1);
                 if (lua_gettop(mLua) != 1) {
                     throw clg::clg_exception(std::string("a function is expected to return ") + typeid(Return).name() + "; nothing returned");
                 }
-                auto r = get_from_lua<Return>(mLua);
-                lua_settop(mLua, 0);
-                return r;
+                return get_from_lua<Return>(mLua);
             }
         }
 
