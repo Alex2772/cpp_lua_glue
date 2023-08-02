@@ -63,6 +63,8 @@ namespace clg {
 
     struct stack_integrity_fix: stack_integrity_check {
     public:
+        using stack_integrity_check::stack_integrity_check;
+
         ~stack_integrity_fix() {
             fixStack();
         }
