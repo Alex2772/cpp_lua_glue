@@ -144,7 +144,10 @@ namespace clg {
 
         template<typename T>
         std::optional<T> is() const {
-            assert(!isNull());
+            if (isNull()) {
+                return std::nullopt;
+            }
+
             stack_integrity_check check(mLua);
             push_value_to_stack();
             try {
