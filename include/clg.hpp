@@ -247,7 +247,7 @@ namespace clg {
             return static_cast<int>(value);
         }
         template<typename T, typename Mapper = decltype(to_int_mapper<T>)>
-        void register_enum(Mapper&& mapper = to_int_mapper<T>) noexcept {
+        void register_enum(const char* name = nullptr, Mapper&& mapper = to_int_mapper<T>) noexcept {
             static_assert(std::is_enum_v<T>, "T expected to be enum");
             stack_integrity_check checks(mState);
 
@@ -258,7 +258,7 @@ namespace clg {
                 clg::push_to_lua(mState, mapper(value));
                 lua_settable(mState, -3);
             }
-            lua_setglobal(mState, clg::class_name<T>().c_str());
+            lua_setglobal(mState, name ? name : clg::class_name<T>().c_str());
         };
 
 
