@@ -5,16 +5,19 @@
 #pragma once
 
 #include "converter.hpp"
+#include "exception.hpp"
 #include "ref.hpp"
+#include <algorithm>
 #include <map>
 #include <string>
+#include <string_view>
 
 namespace clg {
     using table_array = std::vector<ref>;
 
-    class table: public std::map<std::string, clg::ref> {
+    class table: public std::vector<std::pair<std::string, clg::ref>> {
     public:
-        using std::map<std::string, clg::ref>::map;
+        using std::vector<std::pair<std::string, clg::ref>>::vector;
 
         [[nodiscard]]
         table_array toArray() const {
@@ -32,6 +35,27 @@ namespace clg {
                 }
             }
             return result;
+        }
+
+        clg::ref& operator[](std::string_view key) {
+            auto i = std::find_if(this->begin(), this->end(), [&](const auto& p) {
+                return p.first == key;
+            });
+            if (i == this->end()) {
+                emplace_back(std::string(key), clg::ref{});
+                return back().second;
+            }
+            return i->second;
+        }
+
+        const clg::ref& operator[](std::string_view key) const {
+            auto i = std::find_if(this->begin(), this->end(), [&](const auto& p) {
+                return p.first == key;
+            });
+            if (i == this->end()) {
+                throw clg_exception(std::string("no such key: ") + key.data());
+            }
+            return i->second;
         }
     };
 
