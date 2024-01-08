@@ -107,7 +107,9 @@ namespace clg {
             lua_pushcfunction(mLua, error_handler);
             lua_insert(mLua, argsDelta);
 
-            auto status = lua_pcall(mLua, args, results, argsDelta);
+
+            auto status = pcall_callback() ? pcall_callback()(mLua, args, results, argsDelta)
+                                           : lua_pcall(mLua, args, results, argsDelta);
 
             // remove inserted error handler
             lua_remove(mLua, argsDelta);
@@ -125,6 +127,12 @@ namespace clg {
 
         static std::function<void()>& exception_callback() {
             static std::function<void()> v;
+            return v;
+        }
+
+        using PcallFunc = std::function<int(lua_State* state, int args, int results, int errorFunc)>;
+        static PcallFunc& pcall_callback() {
+            static PcallFunc v;
             return v;
         }
 
