@@ -166,6 +166,22 @@ namespace clg {
         }
 
         [[nodiscard]]
+        bool operator==(const clg::ref& r) const noexcept {
+            stack_integrity_check check(mLua);
+            push_value_to_stack();
+            r.push_value_to_stack();
+            bool result = lua_compare(mLua, -1, -2, LUA_OPEQ) == 1;
+            lua_pop(mLua, 2);
+
+            return result;
+        }
+
+        [[nodiscard]]
+        bool operator!=(const clg::ref& r) const noexcept {
+            return !operator==(r);
+        }
+
+        [[nodiscard]]
         bool operator==(std::nullptr_t) const noexcept {
             return mPtr == -1;
         }
@@ -203,23 +219,49 @@ namespace clg {
         public:
             value_view(const table_view& table, const std::string_view& name) : table(table), name(name) {}
 
+            template<typename T>
             [[nodiscard]]
-            clg::ref ref() const noexcept {
+            T as() const {
                 const auto L = table.lua();
-                clg::stack_integrity_check c(L);
                 table.push_value_to_stack();
                 if (!lua_istable(L, -1)) {
                     lua_pop(L, 1);
-                    return nullptr;
+                    throw clg_exception("not a table view");
                 }
                 lua_getfield(L, -1, name.data());
-                auto result = clg::ref::from_stack(L);
+                auto v = clg::get_from_lua<T>(L);
                 lua_pop(L, 1);
-                return result;
+                return v;
+            }
+
+            template<typename T>
+            [[nodiscard]]
+            std::optional<T> asOpt() const {
+                const auto L = table.lua();
+                table.push_value_to_stack();
+                if (!lua_istable(L, -1)) {
+                    lua_pop(L, 1);
+                    throw clg_exception("not a table view");
+                }
+                lua_getfield(L, -1, name.data());
+                if (lua_isnil(L, -1)) {
+                    lua_pop(L, 1);
+                    return std::nullopt;
+                }
+                auto v = clg::get_from_lua<T>(L);
+                lua_pop(L, 1);
+                return v;
+            }
+
+
+            [[nodiscard]]
+            clg::ref ref() const {
+                clg::stack_integrity_check c(table.lua());
+                return as<clg::ref>();
             }
 
             [[nodiscard]]
-            explicit operator class ref() const noexcept {
+            explicit operator class ref() const {
                 return ref();
             }
 
