@@ -5,6 +5,7 @@
 #pragma once
 
 #include "clg.hpp"
+#include "table.hpp"
 #include <vector>
 #include <cassert>
 #include <cstdio>
@@ -17,9 +18,9 @@ namespace clg {
             luaL_setfuncs(L, l.data(), 0);
         }
 #else
-    static void newlib(lua_State* L, const std::vector<luaL_Reg>& l) {
-        luaL_newlib(L, const_cast<std::vector<luaL_Reg>&>(l).data());
-    }
+        static void newlib(lua_State* L, const std::vector<luaL_Reg>& l) {
+            luaL_newlib(L, const_cast<std::vector<luaL_Reg>&>(l).data());
+        }
 #endif
         static void newlib(lua_State* L, const lua_cfunctions& l) {
             std::vector<luaL_Reg> reg;
@@ -42,12 +43,12 @@ namespace clg {
 
     template<class C>
     class class_registrar {
-    friend class clg::state_interface;
+        friend class clg::state_interface;
     private:
         state_interface& mClg;
 
         class_registrar(state_interface& clg):
-            mClg(clg)
+                mClg(clg)
         {
 
         }
@@ -110,6 +111,30 @@ namespace clg {
             };
 
             using wrapper_function_helper = wrapper_function_helper_t<typename class_info::args>;
+        };
+
+        struct brackets_operator_helper {
+            inline static lua_CFunction func = nullptr;
+            inline static std::optional<clg::ref> methods;
+
+            static int handler(lua_State* L) {
+                assert(func != nullptr && methods);
+                if (lua_isstring(L, 2) && !lua_isnumber(L, 2)) {
+                    auto method_name = get_from_lua<std::string_view>(L, 2);
+                    push_to_lua(L, methods->as<table>()[method_name]);
+                    if (!lua_isnil(L, -1)) {
+                        return 1;
+                    }
+
+                    lua_pop(L, 1);
+                }
+
+                lua_pushcfunction(L, func);
+                lua_pushvalue(L, 1);
+                lua_pushvalue(L, 2);
+                lua_call(L, 2, 1);
+                return 1;
+            };
         };
 
         template<typename... Args>
@@ -207,7 +232,13 @@ namespace clg {
 
             auto methods = impl::table_from_c_functions(mClg, mMethods);
 
-            metatable["__index"] = methods;
+            if (brackets_operator_helper::func) {
+                metatable["__index"] = static_cast<lua_CFunction>(brackets_operator_helper::handler);
+                brackets_operator_helper::methods = std::move(methods);
+            }
+            else {
+                metatable["__index"] = methods;
+            }
 
             clazz.set_metatable(metatable);
 
@@ -215,11 +246,11 @@ namespace clg {
 
             if constexpr (std::is_base_of_v<clg::allow_lua_inheritance, C>) {
                 mClg.class_metainfo().push_back({
-                    [](clg::allow_lua_inheritance* probe) {
-                        return dynamic_cast<clg::allow_lua_inheritance*>(probe) != nullptr;
-                    },
-                    std::move(mMethods)
-                });
+                                                        [](clg::allow_lua_inheritance* probe) {
+                                                            return dynamic_cast<clg::allow_lua_inheritance*>(probe) != nullptr;
+                                                        },
+                                                        std::move(mMethods)
+                                                });
             }
         }
 
@@ -230,8 +261,8 @@ namespace clg {
             using my_instance = typename my_register_function_helper::template instance<constructor_helper<Args...>::construct>;
 
             mConstructors.push_back({
-                my_instance::call
-            });
+                                            my_instance::call
+                                    });
             return *this;
         }
 
@@ -240,17 +271,17 @@ namespace clg {
             using wrapper_function_helper = typename method_helper<m>::wrapper_function_helper;
             using my_instance = typename wrapper_function_helper::my_instance;
             mMethods.push_back({
-               std::move(name),
-               my_instance::call
-            });
+                                       std::move(name),
+                                       my_instance::call
+                               });
             return *this;
         }
         template<typename Callable>
         class_registrar<C>& method(std::string name, Callable&& callable) {
             mMethods.push_back({
-               std::move(name),
-               mClg.wrap_lambda_to_cfunction(std::forward<Callable>(callable))
-            });
+                                       std::move(name),
+                                       mClg.wrap_lambda_to_cfunction(std::forward<Callable>(callable))
+                               });
             return *this;
         }
 
@@ -259,9 +290,9 @@ namespace clg {
             using wrapper_function_helper = typename method_helper<m>::wrapper_function_helper;
             using my_instance = typename wrapper_function_helper::my_instance_builder;
             mMethods.push_back({
-               std::move(name),
-               my_instance::call
-            });
+                                       std::move(name),
+                                       my_instance::call
+                               });
             return *this;
         }
 
@@ -275,9 +306,9 @@ namespace clg {
             constexpr auto call = wrapper_function_helper::my_instance_no_this::call;
 #endif
             mStaticFunctions.push_back({
-               std::move(name),
-               call
-            });
+                                               std::move(name),
+                                               call
+                                       });
             return *this;
         }
 
@@ -286,9 +317,9 @@ namespace clg {
             auto wrap = mClg.wrap_lambda_to_cfunction(std::forward<Callable>(callback));
 
             mStaticFunctions.push_back({
-               std::move(name),
-               wrap
-            });
+                                               std::move(name),
+                                               wrap
+                                       });
             return *this;
         }
 
@@ -297,9 +328,9 @@ namespace clg {
             auto wrap = mClg.wrap_lambda_to_cfunction(std::forward<Callable>(callback));
 
             mMetaFunctions.push_back({
-                                               std::move(name),
-                                               wrap
-                                       });
+                                             std::move(name),
+                                             wrap
+                                     });
             return *this;
         }
 
@@ -313,9 +344,17 @@ namespace clg {
             constexpr auto call = wrapper_function_helper::my_instance_no_this::call;
 #endif
             mMetaFunctions.push_back({
-                 std::move(name),
-                 call
-            });
+                                             std::move(name),
+                                             call
+                                     });
+            return *this;
+        }
+
+        template<auto m>
+        class_registrar<C>& bracketsOperator() {
+            using wrapper_function_helper = typename method_helper<m>::wrapper_function_helper;
+            using my_instance = typename wrapper_function_helper::my_instance;
+            brackets_operator_helper::func = my_instance::call;
             return *this;
         }
 
