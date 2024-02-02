@@ -5,6 +5,7 @@
 #pragma once
 
 #include "clg.hpp"
+#include "table.hpp"
 #include <vector>
 #include <cassert>
 #include <cstdio>
@@ -112,6 +113,30 @@ namespace clg {
             using wrapper_function_helper = wrapper_function_helper_t<typename class_info::args>;
         };
 
+        struct brackets_operator_helper {
+            inline static lua_CFunction func = nullptr;
+            inline static std::optional<clg::ref> methods;
+
+            static int handler(lua_State* L) {
+                assert(func != nullptr && methods);
+                if (lua_isstring(L, 2) && !lua_isnumber(L, 2)) {
+                    auto method_name = get_from_lua<std::string_view>(L, 2);
+                    push_to_lua(L, methods->as<table>()[method_name]);
+                    if (!lua_isnil(L, -1)) {
+                        return 1;
+                    }
+
+                    lua_pop(L, 1);
+                }
+
+                lua_pushcfunction(L, func);
+                lua_pushvalue(L, 1);
+                lua_pushvalue(L, 2);
+                lua_call(L, 2, 1);
+                return 1;
+            };
+        };
+
         template<typename... Args>
         struct constructor_helper {
             static std::shared_ptr<C> construct(void* self, Args... args) {
@@ -207,7 +232,13 @@ namespace clg {
 
             auto methods = impl::table_from_c_functions(mClg, mMethods);
 
-            metatable["__index"] = methods;
+            if (brackets_operator_helper::func) {
+                metatable["__index"] = static_cast<lua_CFunction>(brackets_operator_helper::handler);
+                brackets_operator_helper::methods = std::move(methods);
+            }
+            else {
+                metatable["__index"] = methods;
+            }
 
             clazz.set_metatable(metatable);
 
@@ -316,6 +347,14 @@ namespace clg {
                  std::move(name),
                  call
             });
+            return *this;
+        }
+
+        template<auto m>
+        class_registrar<C>& bracketsOperator() {
+            using wrapper_function_helper = typename method_helper<m>::wrapper_function_helper;
+            using my_instance = typename wrapper_function_helper::my_instance;
+            brackets_operator_helper::func = my_instance::call;
             return *this;
         }
 
