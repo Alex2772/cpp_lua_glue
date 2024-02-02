@@ -7,31 +7,74 @@
 #include "lua.hpp"
 #include "exception.hpp"
 #include "util.hpp"
-#include "shared_ptr_helper.hpp"
 #include <tuple>
+#include <type_traits>
 #include <variant>
 
 namespace clg {
 
     std::string any_to_string(lua_State* l, int n = -1, int depth = 8);
 
-    struct converter_error: clg_exception {
-        using clg_exception::clg_exception;
+    struct converter_error {
+        const char* errorLiteral;
     };
 
 
-    namespace detail {
-        static void throw_converter_error(lua_State* l, int n, const std::string& message) {
-            throw converter_error(message + ": " + any_to_string(l, n));
+    /**
+     * @brief Wraps clg::converter<>::from_lua return value, as such it can report conversion errors without exceptions.
+     */
+    template<typename T>
+    struct converter_result {
+        using impl = std::variant<T, converter_error>;
+
+        template<typename U, typename = std::enable_if_t<std::is_convertible_v<U, T>>>
+        converter_result(U&& value): value(T((std::forward<U>(value)))) {}
+        converter_result(converter_error value): value(std::move(value)) {}
+
+        [[nodiscard]]
+        bool is_ok() const noexcept {
+            return std::holds_alternative<T>(value);
         }
-    }
+
+        [[nodiscard]]
+        bool is_error() const noexcept {
+            return std::holds_alternative<converter_error>(value);
+        }
+
+        [[nodiscard]]
+        T& operator*() noexcept {
+            assert(is_ok());
+            return *std::get_if<T>(&value);
+        }
+
+        [[nodiscard]]
+        const T& operator*() const noexcept {
+            assert(is_ok());
+            return *std::get_if<T>(&value);
+        }
+
+        [[nodiscard]]
+        converter_error& error() noexcept {
+            assert(is_error());
+            return *std::get_if<converter_error>(&value);
+        }
+
+        [[nodiscard]]
+        const converter_error& error() const noexcept {
+            assert(is_error());
+            return *std::get_if<converter_error>(&value);
+        }
+
+    private:
+        impl value;
+    };
 
     template<typename T, typename EnableIf=void>
     struct converter;
 
     template<typename T>
     struct converter<T, std::enable_if_t<std::is_integral_v<T> || std::is_floating_point_v<T> || std::is_enum_v<T>>> {
-        static T from_lua(lua_State* l, int n) {
+        static converter_result<T> from_lua(lua_State* l, int n) {
             if constexpr (std::is_integral_v<T> || std::is_floating_point_v<T> || std::is_enum_v<T>) {
 #ifdef lua_isinteger
                 if (lua_isinteger(l, n)) {
@@ -44,7 +87,7 @@ namespace clg {
                 if (lua_isnumber(l, n)) {
                     return static_cast<T>(lua_tonumber(l, n));
                 }
-                detail::throw_converter_error(l, n, "not a number");
+                return converter_error{"not a number"};
             }
             throw clg_exception("unimplemented converter for " + clg::class_name<T>());
         }
@@ -66,13 +109,13 @@ namespace clg {
 
     template<>
     struct converter<std::string> {
-        static std::string from_lua(lua_State* l, int n) {
+        static converter_result<std::string> from_lua(lua_State* l, int n) {
             if (!lua_isstring(l, n)) {
-                detail::throw_converter_error(l, n, "not a string");
+                return converter_error{"not a string"};
             }
             std::size_t len;
             auto data = lua_tolstring(l, n, &len);
-            return { data, len };
+            return std::string{ data, len };
         }
         static int to_lua(lua_State* l, const std::string& v) {
             lua_pushlstring(l, v.c_str(), v.length());
@@ -81,13 +124,13 @@ namespace clg {
     };
     template<>
     struct converter<std::string_view> {
-        static std::string_view from_lua(lua_State* l, int n) {
+        static converter_result<std::string_view> from_lua(lua_State* l, int n) {
             if (!lua_isstring(l, n)) {
-                detail::throw_converter_error(l, n, "not a string");
+                return converter_error{"not a string"};
             }
             std::size_t len;
             auto data = lua_tolstring(l, n, &len);
-            return { data, len };
+            return std::string_view{ data, len };
         }
         static int to_lua(lua_State* l, std::string_view v) {
             lua_pushlstring(l, v.data(), v.length());
@@ -97,9 +140,9 @@ namespace clg {
 
     template<>
     struct converter<lua_CFunction> {
-        static lua_CFunction from_lua(lua_State* l, int n) {
+        static converter_result<lua_CFunction> from_lua(lua_State* l, int n) {
             if (!lua_iscfunction(l, n)) {
-                detail::throw_converter_error(l, n, "not a cfunction");
+                return converter_error{"not a cfunction"};
             }
             return lua_tocfunction(l, n);
         }
@@ -111,9 +154,9 @@ namespace clg {
 
     template<>
     struct converter<const char*> {
-        static const char* from_lua(lua_State* l, int n) {
+        static converter_result<const char*> from_lua(lua_State* l, int n) {
             if (!lua_isstring(l, n)) {
-                detail::throw_converter_error(l, n, "not a string");
+                return converter_error{"not a string"};
             }
             return lua_tostring(l, n);
         }
@@ -126,15 +169,15 @@ namespace clg {
 
     template<>
     struct converter<void*> {
-        static void* from_lua(lua_State* l, int n) {
+        static converter_result<void*> from_lua(lua_State* l, int n) {
             return nullptr;
         }
     };
     template<int N>
     struct converter<char[N]> {
-        static const char* from_lua(lua_State* l, int n) {
+        static converter_result<const char*> from_lua(lua_State* l, int n) {
             if (!lua_isstring(l, n)) {
-                detail::throw_converter_error(l, n, "not a string");
+                return converter_error{"not a string"};
             }
             return lua_tostring(l, n);
         }
@@ -145,9 +188,9 @@ namespace clg {
     };
     template<>
     struct converter<bool> {
-        static bool from_lua(lua_State* l, int n) {
+        static converter_result<bool> from_lua(lua_State* l, int n) {
             if (!lua_isboolean(l, n)) {
-                detail::throw_converter_error(l, n, "not a boolean");
+                return converter_error{"not a boolean"};
             }
             return lua_toboolean(l, n);
         }
@@ -159,9 +202,9 @@ namespace clg {
 
     template<>
     struct converter<std::nullptr_t> {
-        static std::nullptr_t from_lua(lua_State* l, int n) {
+        static converter_result<std::nullptr_t> from_lua(lua_State* l, int n) {
             if (!lua_isnil(l, n)) {
-                detail::throw_converter_error(l, n, "not a nil");
+                return converter_error{"not a nil"};
             }
             return nullptr;
         }
@@ -172,19 +215,46 @@ namespace clg {
     };
 
     template<typename T>
-    static T get_from_lua(lua_State* l) {
+    static converter_result<T> get_from_lua_raw(lua_State* l, int index = -1) {
+        // incomplete type 'clg::converter<...>' error here means converter is not defined or not reachable (missing #include)
+        static_assert(std::is_same_v<decltype(converter<T>::from_lua(l, index)), converter_result<T>>, 
+                      "converter<T>::from_lua is expected to return converter_result<T>");
         clg::checkThread();
-        T t = converter<T>::from_lua(l, -1);
-        lua_pop(l, 1);
+        converter_result<T> t = converter<T>::from_lua(l, index);
         return t;
     }
 
     template<typename T>
-    static T get_from_lua(lua_State* l, unsigned index) {
+    static T get_from_lua(lua_State* l, int index = -1) {
         clg::checkThread();
 
-        // incomplete type 'clg::converter<...>' error here means converter is not defined or not reachable (missing #include)
-        return converter<T>::from_lua(l, index);
+        converter_result<T> result = get_from_lua_raw<T>(l, index);
+        if (result.is_error()) {
+            std::string errorMessage = "converter returned converter_error result; get_from_lua";
+            if (result.error().errorLiteral) {
+                errorMessage += ": ";
+                errorMessage += result.error().errorLiteral;
+            }
+            throw clg_exception(std::move(errorMessage));
+        }
+        return *result;
+    }
+
+    template<typename T>
+    static T pop_from_lua(lua_State* l) {
+        clg::checkThread();
+
+        converter_result<T> result = get_from_lua_raw<T>(l, -1);
+        lua_pop(l, 1);
+        if (result.is_error()) {
+            std::string errorMessage = "converter returned converter_error result; get_from_lua";
+            if (result.error().errorLiteral) {
+                errorMessage += ": ";
+                errorMessage += result.error().errorLiteral;
+            }
+            throw clg_exception(std::move(errorMessage));
+        }
+        return *result;
     }
 
     /**
@@ -227,25 +297,51 @@ namespace clg {
     template<typename... Types>
     struct converter<std::variant<Types...>> {
         template<typename T, typename... T2>
-        static std::variant<Types...> from_lua_recursive(lua_State* l, int n) {
-            try {
-                return clg::get_from_lua<T>(l, n);
-            } catch (...) {
-                if constexpr (sizeof...(T2) == 0) {
-                    throw clg::converter_error("unable to convert to variant type");
-                } else {
-                    return from_lua_recursive<T2...>(l, n);
-                }
+        static converter_result<std::variant<Types...>> from_lua_recursive(lua_State* l, int n) {
+            auto r = clg::get_from_lua_raw<T>(l, n);
+            if (r.is_ok()) {
+                return *r;
             }
+
+            if constexpr (sizeof...(T2) != 0) {
+                return from_lua_recursive<T2...>(l, n);
+            }
+
+            return converter_error{"none of variant types can be converted to"};
         }
 
-        static std::variant<Types...> from_lua(lua_State* l, int n) {
+        static converter_result<std::variant<Types...>> from_lua(lua_State* l, int n) {
             return from_lua_recursive<Types...>(l, n);
         }
         static int to_lua(lua_State* l, const std::variant<Types...>& types) {
             return std::visit([&](const auto& v) {
                 return clg::push_to_lua(l, v);
             }, types);
+        }
+    };
+
+
+    /**
+     * @brief Borrows conversion routine from one type to another.
+     * @example
+     * @code{cpp}
+     * // AngleDegrees will be converted to float as if it was float
+     * template<> struct converter<AngleDegrees>: converter_derived<float, AngleDegrees> {};
+     * @endcode
+     */
+    template<typename From, typename To>
+    struct converter_derived {
+    public:
+        static converter_result<To> from_lua(lua_State* l, int n) {
+            auto r = clg::get_from_lua_raw<From>(l, n);
+            if (r.is_error()) {
+                return r.error();
+            }
+            return To(std::move(*r));
+        }
+
+        static int to_lua(lua_State* l, const To& t) {
+            return clg::push_to_lua(l, From(t));
         }
     };
 }

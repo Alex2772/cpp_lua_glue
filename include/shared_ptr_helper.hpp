@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "converter.hpp"
 #include <map>
 #include <memory>
 
@@ -33,14 +34,14 @@ namespace clg {
         ~shared_ptr_helper() = default;
 
         template<typename T>
-        std::shared_ptr<T> as() const {
+        clg::converter_result<std::shared_ptr<T>> as() const {
             if constexpr (std::is_base_of_v<allow_lua_inheritance, T>) {
                 auto inheritance = reinterpret_cast<const std::shared_ptr<allow_lua_inheritance>&>(ptr);
                 return std::dynamic_pointer_cast<T>(inheritance);
             } else {
                 if (auto& expected = typeid(T); expected != type) {
-                    throw std::runtime_error(
-                            std::string("type mismatch: expected ") + expected.name() + ", actual " + type.name() + "\nnote: extend clg::allow_lua_inheritance to allow inheritance");
+                    static std::string e = std::string("type mismatch: expected ") + expected.name() + "\nnote: extend clg::allow_lua_inheritance to allow inheritance";
+                    return converter_error(e.c_str());
                 }
                 return reinterpret_cast<const std::shared_ptr<T>&>(ptr);
             }

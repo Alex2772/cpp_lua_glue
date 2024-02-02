@@ -67,7 +67,7 @@ namespace clg {
 
             if constexpr (std::is_same_v < Return, clg::dynamic_result >) {
                 do_call(sizeof...(args), LUA_MULTRET);
-                return get_from_lua<Return>(mLua);
+                return pop_from_lua<Return>(mLua);
             } else if constexpr (std::is_same_v < Return, void >) {
                 do_call(sizeof...(args), 0);
             } else {
@@ -75,7 +75,7 @@ namespace clg {
                 if (lua_gettop(mLua) != 1) {
                     throw clg::clg_exception(std::string("a function is expected to return ") + typeid(Return).name() + "; nothing returned");
                 }
-                return get_from_lua<Return>(mLua);
+                return pop_from_lua<Return>(mLua);
             }
         }
 
@@ -147,8 +147,12 @@ namespace clg {
 
     template<>
     struct converter<clg::function> {
-        static clg::function from_lua(lua_State* l, int n) {
-            return { l, get_from_lua<ref>(l, n) };
+        static converter_result<clg::function> from_lua(lua_State* l, int n) {
+            auto r = get_from_lua_raw<ref>(l, n);
+            if (r.is_error()) {
+                return r.error();
+            }
+            return clg::function{ l, std::move(*r) };
         }
         static int to_lua(lua_State* l, const clg::ref& ref) {
             ref.push_value_to_stack();

@@ -1,7 +1,9 @@
 #pragma once
 
+#include "converter.hpp"
 #include "lua.hpp"
 #include "exception.hpp"
+#include <optional>
 
 
 namespace clg {
@@ -10,6 +12,8 @@ namespace clg {
      */
     struct builder_return_type {};
 
+
+    static constexpr int OVERLOADED_HELPER_SUBSTITUTION_FAILURE = -228;
     namespace detail {
 
         template<typename... TupleArgs>
@@ -20,14 +24,21 @@ namespace clg {
             using target_tuple = std::tuple<TupleArgs...>;
 
             template<unsigned index>
-            void fill(target_tuple& t) {}
+            std::optional<clg::converter_error> fill(target_tuple& t) {
+                return std::nullopt;
+            }
 
             template<unsigned index, typename Arg, typename... Args>
-            void fill(target_tuple& t) {
-                std::get<index>(t) = clg::get_from_lua<Arg>(l, index + 1);
-                fill<index + 1, Args...>(t);
+            std::optional<clg::converter_error>fill(target_tuple& t) {
+                clg::converter_result<Arg> r = clg::get_from_lua_raw<Arg>(l, index + 1);
+                if (r.is_error()) {
+                    return r.error();
+                }
+                std::get<index>(t) = std::move(*r);
+                return fill<index + 1, Args...>(t);
             }
         };
+
 
         template<typename Return, typename... Args>
         struct register_function_helper {
@@ -41,21 +52,27 @@ namespace clg {
                     clg::checkThread();
                     try {
                         size_t argsCount = lua_gettop(s);
+
+                        if constexpr (!is_vararg) {
+                            if (argsCount != sizeof...(Args)) {
+                                if constexpr (passthroughSubstitutionError) {
+                                    return OVERLOADED_HELPER_SUBSTITUTION_FAILURE;
+                                }
+                                throw clg_exception("invalid argument count! expected "
+                                                            + std::to_string(sizeof...(Args))
+                                                            + ", actual " + std::to_string(argsCount));
+                            }
+                        }
+
                         std::tuple<std::decay_t<Args>...> argsTuple;
 
-                        try {
-                            if constexpr (!is_vararg) {
-                                if (argsCount != sizeof...(Args)) {
-                                    throw substitution_error("invalid argument count! expected "
-                                                             + std::to_string(sizeof...(Args))
-                                                             + ", actual " + std::to_string(argsCount));
-                                }
+                        if (auto error = tuple_fill_from_lua_helper<std::decay_t<Args>...>(s).template fill<0, std::decay_t<Args>...>(argsTuple)) {
+                            if constexpr (passthroughSubstitutionError) {
+                                return OVERLOADED_HELPER_SUBSTITUTION_FAILURE;
                             }
-
-                            tuple_fill_from_lua_helper<std::decay_t<Args>...>(s).template fill<0, std::decay_t<Args>...>(argsTuple);
-                        } catch (const std::exception& e) {
-                            throw substitution_error(e.what());
+                            throw clg_exception(error->errorLiteral);
                         }
+
 
                         if constexpr (std::is_same_v<Return, builder_return_type>) {
                             lua_pop(s, sizeof...(Args) - 1);
@@ -73,16 +90,6 @@ namespace clg {
                             // возвращаем одно значение
                             return clg::push_to_lua(s, (std::apply)(f, std::move(argsTuple)));
                         }
-                    } catch (const substitution_error& e) {
-                        if constexpr (passthroughSubstitutionError) {
-                            throw;
-                        }
-                        if (clg::function::exception_callback()) {
-                            clg::function::exception_callback()();
-                        }
-                        clg::push_to_lua(s, nullptr);
-                        clg::push_to_lua(s, "no such overloaded function");
-                        return 2;
                     } catch (const std::exception& e) {
                         if (clg::function::exception_callback()) {
                             clg::function::exception_callback()();

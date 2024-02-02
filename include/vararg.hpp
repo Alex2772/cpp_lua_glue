@@ -13,7 +13,7 @@ namespace clg {
 
     template<>
     struct converter<vararg> {
-        static vararg from_lua(lua_State* l, int n) {
+        static clg::converter_result<vararg> from_lua(lua_State* l, int n) {
             clg::stack_integrity_check check(l);
             vararg v;
             int count = lua_gettop(l);

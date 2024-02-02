@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lua.h"
 #include "lua.hpp"
 #include "converter.hpp"
 #include "value.hpp"
@@ -131,15 +132,19 @@ namespace clg {
             assert(!isNull());
             stack_integrity_check check(mLua);
             push_value_to_stack();
-            try {
-                auto v = clg::get_from_lua<T>(mLua, -1);
-                lua_pop(mLua, 1);
-                return v;
-            } catch (...) {
-                lua_pop(mLua, 1);
-                throw;
-            }
-            throw std::runtime_error("should not reach here");
+
+            return clg::pop_from_lua<T>(mLua);
+        }
+
+        template<typename T>
+        converter_result<T> as_converter_result() const {
+            assert(!isNull());
+            stack_integrity_check check(mLua);
+            push_value_to_stack();
+
+            auto v = clg::get_from_lua_raw<T>(mLua, -1);
+            lua_pop(mLua, 1);
+            return v;
         }
 
         template<typename T>
@@ -149,16 +154,11 @@ namespace clg {
             }
 
             stack_integrity_check check(mLua);
-            push_value_to_stack();
-            try {
-                auto v = clg::get_from_lua<T>(mLua, -1);
-                lua_pop(mLua, 1);
-                return v;
-            } catch (...) {
-                check.fixStack();
+            auto r = as_converter_result<T>();
+            if (r.is_error()) {
                 return std::nullopt;
             }
-            throw std::runtime_error("should not reach here");
+            return *r;
         }
 
         lua_State* lua() const noexcept {
@@ -230,13 +230,13 @@ namespace clg {
                 }
                 lua_getfield(L, -1, name.data());
                 auto v = clg::get_from_lua<T>(L);
-                lua_pop(L, 1);
+                lua_pop(L, 2);
                 return v;
             }
 
             template<typename T>
             [[nodiscard]]
-            std::optional<T> asOpt() const {
+            std::optional<T> is() const {
                 const auto L = table.lua();
                 table.push_value_to_stack();
                 if (!lua_istable(L, -1)) {
@@ -248,9 +248,12 @@ namespace clg {
                     lua_pop(L, 1);
                     return std::nullopt;
                 }
-                auto v = clg::get_from_lua<T>(L);
+                auto v = clg::get_from_lua_raw<T>(L);
                 lua_pop(L, 1);
-                return v;
+                if (v.is_error()) {
+                    return std::nullopt;
+                }
+                return *v;
             }
 
 
@@ -306,7 +309,7 @@ namespace clg {
 
     template<>
     struct converter<clg::ref> {
-        static ref from_lua(lua_State* l, int n) {
+        static converter_result<ref> from_lua(lua_State* l, int n) {
             lua_pushvalue(l, n);
             return clg::ref::from_stack(l);
         }
@@ -321,6 +324,14 @@ namespace clg {
     };
 
     template<>
-    struct converter<clg::table_view>: converter<clg::ref> {};
+    struct converter<clg::table_view> {
+        static converter_result<table_view> from_lua(lua_State* l, int n) {
+            lua_pushvalue(l, n);
+            return table_view(clg::ref::from_stack(l));
+        }
+        static int to_lua(lua_State* l, const clg::ref& ref) {
+            return clg::push_to_lua(l, ref);
+        }
+    };
 
 }

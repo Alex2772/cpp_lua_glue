@@ -1,5 +1,6 @@
 #pragma once
 
+#include "converter.hpp"
 #include "weak_ref.hpp"
 #include "table.hpp"
 
@@ -70,9 +71,9 @@ namespace clg {
     struct converter_shared_ptr_impl {
         static constexpr bool use_lua_self = std::is_base_of_v<clg::lua_self, T>;
 
-        static std::shared_ptr<T> from_lua(lua_State* l, int n) {
+        static converter_result<std::shared_ptr<T>> from_lua(lua_State* l, int n) {
             if (lua_isnil(l, n)) {
-                return nullptr;
+                return std::shared_ptr<T>(nullptr);
             }
 
             if constexpr(use_lua_self) {
@@ -80,19 +81,18 @@ namespace clg {
                     lua_getfield(l, n, "clg_strongref");
                     if (!lua_isuserdata(l, -1)) {
                         lua_pop(l, 1);
-                        detail::throw_converter_error(l, n, "not a cpp object");
+                        return clg::converter_error("not a cpp object");
                     }
                     auto p = reinterpret_cast<shared_ptr_helper*>(lua_touserdata(l, -1))->as<T>();
                     lua_pop(l, 1);
                     return p;
                 }
-                return nullptr;
+                return std::shared_ptr<T>(nullptr);
             } else {
                 if (lua_isuserdata(l, n)) {
                     return reinterpret_cast<shared_ptr_helper*>(lua_touserdata(l, n))->as<T>();
                 }
-                detail::throw_converter_error(l, n, "not a userdata");
-                return nullptr;
+                return clg::converter_error("not a userdata");
             }
         }
 
@@ -184,9 +184,13 @@ namespace clg {
                         return;
                     }
 
-                    auto object = reinterpret_cast<shared_ptr_helper*>(lua_touserdata(L, -1))->as<T>();
+                    auto r = reinterpret_cast<shared_ptr_helper*>(lua_touserdata(L, -1))->as<T>();
+                    if (r.is_error()) {
+                        throw std::runtime_error("failed to convert from shared_ptr_helper to as<T>");
+                    }
+                    auto& object = *r;
 
-                    impl::invoke_handle_lua_virtual_func_assignment(*object.get(), key, std::move(value));
+                    impl::invoke_handle_lua_virtual_func_assignment(*(object.get()), key, std::move(value));
                     lua_pop(L, 1);
                 } catch (...) {}
             }

@@ -46,7 +46,7 @@ namespace clg {
         std::thread::id mMyThread = std::this_thread::get_id();
 
         void throw_syntax_error() {
-            auto s = get_from_lua<std::string>(mState);
+            auto s = pop_from_lua<std::string>(mState);
             throw lua_exception(std::move(s));
         }
 
@@ -139,14 +139,18 @@ namespace clg {
 
         };
 
+
         template<typename... Callables>
         struct overloaded_helper {
             static int fake_lua_cfunction(lua_State* L) noexcept {
                 std::string errorDescription;
+                auto stack = lua_gettop(L);
                 for (const auto& func : callable()) {
-                    auto stack = lua_gettop(L);
                     try {
-                        return func(L);
+                        auto r = func(L);
+                        if (r != OVERLOADED_HELPER_SUBSTITUTION_FAILURE) {
+                            return r;
+                        }
                     } catch (const clg::substitution_error& e) {
                         if (!errorDescription.empty()) {
                             errorDescription += "; ";

@@ -27,15 +27,22 @@ namespace clg {
         void push_value_to_stack(int index) const noexcept {
             mData[index].push_value_to_stack();
         }
+        dynamic_result() = default;
     public:
-        dynamic_result(lua_State* state) : mState(state) {
-            std::size_t s = lua_gettop(mState);
-            mData.reserve(s);
+        static converter_result<dynamic_result> from_lua(lua_State* state) {
+            std::size_t s = lua_gettop(state);
+            dynamic_result result;
+            result.mState = state;
+            result.mData.reserve(s);
 
             for (auto i = 0; i < s; ++i) {
-                mData.push_back(clg::get_from_lua<clg::ref>(state, i + 1));
+                auto r = clg::get_from_lua_raw<clg::ref>(state, i + 1);
+                if (r.is_error()) {
+                    return r.error();
+                }
+                result.mData.push_back(std::move(*r));
             }
-            lua_pop(mState, s);
+            lua_pop(result.mState, s);
         }
 
         ~dynamic_result() {
@@ -65,13 +72,8 @@ namespace clg {
 
     template<>
     struct converter<dynamic_result> {
-        static dynamic_result from_lua(lua_State* l, int n) {
-            return {l};
+        static converter_result<dynamic_result> from_lua(lua_State* l, int n) {
+            return dynamic_result::from_lua(l);
         }
     };
-
-    template<>
-    dynamic_result get_from_lua(lua_State* l) {
-        return converter<dynamic_result>::from_lua(l, -1);
-    }
 }

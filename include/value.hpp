@@ -12,21 +12,25 @@ namespace clg {
     using value = std::variant<std::nullptr_t, int, float, std::string>;
 
 
-
+/*
     template<>
     struct converter<clg::value> {
 
 
         template<typename Arg, typename... Args>
         static clg::value converter_impl(lua_State* l, int n) {
+            auto r = converter<Arg>::from_lua(l, n);
+            if (r.is_ok()) {
+                return *r;
+            }
+
+            if constexpr(sizeof...(Args) > 0) {
+                return converter_impl<Args...>(l, n);
+            } else {
+                return {};
+            }
             try {
-                return converter<Arg>::from_lua(l, n);
             } catch (...) {
-                if constexpr(sizeof...(Args) > 0) {
-                    return converter_impl<Args...>(l, n);
-                } else {
-                    return {};
-                }
             }
         }
 
@@ -35,16 +39,11 @@ namespace clg {
             v = converter_impl<Args...>(l, n);
         }
 
-        static clg::value from_lua(lua_State* l, int n) {
+        static converter_result<clg::value> from_lua(lua_State* l, int n) {
             clg::value result;
             converter_begin(l, n, result);
             return result;
         }
-        /*
-        static int to_lua(lua_State* l, std::nullptr_t v) {
-            lua_pushnil(l);
-            return 1;
-        }*/
     };
-
+*/
 }

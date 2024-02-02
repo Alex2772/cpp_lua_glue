@@ -6,7 +6,9 @@
 
 #include "converter.hpp"
 #include "exception.hpp"
+#include "lua.h"
 #include "ref.hpp"
+#include "util.hpp"
 #include <algorithm>
 #include <map>
 #include <string>
@@ -61,9 +63,10 @@ namespace clg {
 
     template<>
     struct converter<clg::table> {
-        static clg::table from_lua(lua_State* l, int n) {
+        static clg::converter_result<clg::table> from_lua(lua_State* l, int n) {
+            clg::stack_integrity_check c(l);
             if (!lua_istable(l, n)) {
-                clg::detail::throw_converter_error(l, n, "not a table");
+                return converter_error("not a table");
             }
 
             clg::table result;
@@ -73,10 +76,18 @@ namespace clg {
             lua_pushnil(l);
             while (lua_next(l, n) != 0)
             {
-                // copy key so that lua_tostring should not break lua_next by modifying key
+                // While traversing a table, do not call lua_tolstring directly on a key, unless you know that the key
+                // is actually a string. Recall that lua_tolstring may change the value at the given index; this
+                // confuses the next call to lua_next. (Lua manual, lua_next)
+                //
+                // This is why we should copy the key value.
                 lua_pushvalue(l, -2);
-                result[clg::get_from_lua<std::string>(l, -1)] = clg::get_from_lua<clg::ref>(l, -2);
+
+                auto key = clg::get_from_lua<std::string>(l, -1);
+                auto value = clg::get_from_lua<clg::ref>(l, -2);
                 lua_pop(l, 2);
+
+                result[std::move(key)] = std::move(value);
             }
             return result;
         }
@@ -98,27 +109,35 @@ namespace clg {
 
     template<>
     struct converter<table_array> {
-        static clg::table_array from_lua(lua_State* l, int n) {
+        static clg::converter_result<clg::table_array> from_lua(lua_State* l, int n) {
+            clg::stack_integrity_check c(l);
+            if (!lua_istable(l, n)) {
+                return converter_error("not a table");
+            }
+
             clg::table_array result;
-            auto t = converter<table>::from_lua(l, n);
-            result.resize(t.size());
-            for (auto&[key, value] : t) {
-                //if keys are indexes try order them
-                unsigned long long index;
-                try {
-                    index = std::stoull(key);
-                } catch (const std::invalid_argument& e){
-                    //just write everything as it is
-                    size_t i = 0;
-                    for (auto&[_, v] : t) {
-                        result[i] = std::move(v);
-                        i++;
-                    }
-
-                    return result;
+            if (n < 0) {
+                n = lua_gettop(l) + n + 1;
+            }
+            lua_pushnil(l);
+            while (lua_next(l, n) != 0)
+            {
+                auto keyRaw = clg::get_from_lua_raw<int>(l, -2);
+                if (keyRaw.is_error()) {
+                    lua_pop(l, 2);
+                    return keyRaw.error();
                 }
-
-                result[index - 1] = value;
+                auto key = *keyRaw - 1;
+                auto value = clg::get_from_lua<clg::ref>(l, -1);
+                lua_pop(l, 1);
+                if (key == result.size()) {
+                    result.push_back(std::move(value));
+                    continue;
+                }
+                if (key > result.size()) {
+                    result.resize(key + 1);
+                }
+                result[key] = std::move(value);
             }
             return result;
         }
