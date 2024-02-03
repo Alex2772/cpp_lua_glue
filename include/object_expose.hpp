@@ -81,7 +81,7 @@ namespace clg {
                     lua_getfield(l, n, "clg_strongref");
                     if (!lua_isuserdata(l, -1)) {
                         lua_pop(l, 1);
-                        return clg::converter_error("not a cpp object");
+                        return clg::converter_error{"not a cpp object"};
                     }
                     auto p = reinterpret_cast<shared_ptr_helper*>(lua_touserdata(l, -1))->as<T>();
                     lua_pop(l, 1);
@@ -92,7 +92,7 @@ namespace clg {
                 if (lua_isuserdata(l, n)) {
                     return reinterpret_cast<shared_ptr_helper*>(lua_touserdata(l, n))->as<T>();
                 }
-                return clg::converter_error("not a userdata");
+                return clg::converter_error{"not a userdata"};
             }
         }
 

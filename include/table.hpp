@@ -66,7 +66,7 @@ namespace clg {
         static clg::converter_result<clg::table> from_lua(lua_State* l, int n) {
             clg::stack_integrity_check c(l);
             if (!lua_istable(l, n)) {
-                return converter_error("not a table");
+                return converter_error{"not a table"};
             }
 
             clg::table result;
@@ -112,7 +112,7 @@ namespace clg {
         static clg::converter_result<clg::table_array> from_lua(lua_State* l, int n) {
             clg::stack_integrity_check c(l);
             if (!lua_istable(l, n)) {
-                return converter_error("not a table");
+                return converter_error{"not a table"};
             }
 
             clg::table_array result;

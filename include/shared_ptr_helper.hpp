@@ -41,7 +41,7 @@ namespace clg {
             } else {
                 if (auto& expected = typeid(T); expected != type) {
                     static std::string e = std::string("type mismatch: expected ") + expected.name() + "\nnote: extend clg::allow_lua_inheritance to allow inheritance";
-                    return converter_error(e.c_str());
+                    return converter_error{e.c_str()};
                 }
                 return reinterpret_cast<const std::shared_ptr<T>&>(ptr);
             }
