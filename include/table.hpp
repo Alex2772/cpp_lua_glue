@@ -6,9 +6,7 @@
 
 #include "converter.hpp"
 #include "exception.hpp"
-#include "lua.h"
 #include "ref.hpp"
-#include "util.hpp"
 #include <algorithm>
 #include <map>
 #include <string>

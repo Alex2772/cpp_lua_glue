@@ -1,9 +1,7 @@
 #pragma once
 
-#include "converter.hpp"
 #include "lua.hpp"
 #include "exception.hpp"
-#include <optional>
 
 
 namespace clg {

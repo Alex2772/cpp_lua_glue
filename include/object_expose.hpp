@@ -1,6 +1,5 @@
 #pragma once
 
-#include "converter.hpp"
 #include "weak_ref.hpp"
 #include "table.hpp"
 

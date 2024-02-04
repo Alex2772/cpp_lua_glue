@@ -7,67 +7,14 @@
 #include "lua.hpp"
 #include "exception.hpp"
 #include "util.hpp"
+#include "shared_ptr_helper.hpp"
 #include <tuple>
-#include <type_traits>
 #include <variant>
 
 namespace clg {
 
     std::string any_to_string(lua_State* l, int n = -1, int depth = 8);
 
-    struct converter_error {
-        const char* errorLiteral;
-    };
-
-
-    /**
-     * @brief Wraps clg::converter<>::from_lua return value, as such it can report conversion errors without exceptions.
-     */
-    template<typename T>
-    struct converter_result {
-        using impl = std::variant<T, converter_error>;
-
-        template<typename U, typename = std::enable_if_t<std::is_convertible_v<U, T>>>
-        converter_result(U&& value): value(T((std::forward<U>(value)))) {}
-        converter_result(converter_error value): value(std::move(value)) {}
-
-        [[nodiscard]]
-        bool is_ok() const noexcept {
-            return std::holds_alternative<T>(value);
-        }
-
-        [[nodiscard]]
-        bool is_error() const noexcept {
-            return std::holds_alternative<converter_error>(value);
-        }
-
-        [[nodiscard]]
-        T& operator*() noexcept {
-            assert(is_ok());
-            return *std::get_if<T>(&value);
-        }
-
-        [[nodiscard]]
-        const T& operator*() const noexcept {
-            assert(is_ok());
-            return *std::get_if<T>(&value);
-        }
-
-        [[nodiscard]]
-        converter_error& error() noexcept {
-            assert(is_error());
-            return *std::get_if<converter_error>(&value);
-        }
-
-        [[nodiscard]]
-        const converter_error& error() const noexcept {
-            assert(is_error());
-            return *std::get_if<converter_error>(&value);
-        }
-
-    private:
-        impl value;
-    };
 
     template<typename T, typename EnableIf=void>
     struct converter;
