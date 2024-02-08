@@ -5,7 +5,9 @@
 #include "value.hpp"
 #include <cassert>
 #include <algorithm>
+#include <cstddef>
 #include <optional>
+#include <type_traits>
 
 namespace clg {
     class ref {
@@ -128,7 +130,13 @@ namespace clg {
 
         template<typename T>
         T as() const {
-            assert(!isNull());
+            if constexpr (std::is_convertible_v<std::nullptr_t, T>) {
+                if (isNull()) {
+                    return nullptr;
+                }
+            } else {
+                assert(!isNull());
+            }
             stack_integrity_check check(mLua);
             push_value_to_stack();
 

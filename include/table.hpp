@@ -6,7 +6,10 @@
 
 #include "converter.hpp"
 #include "exception.hpp"
+#include "lua.h"
 #include "ref.hpp"
+#include "shared_ptr_helper.hpp"
+#include "value.hpp"
 #include <algorithm>
 #include <map>
 #include <string>
@@ -105,50 +108,98 @@ namespace clg {
         }
     };
 
-    template<>
-    struct converter<table_array> {
-        static clg::converter_result<clg::table_array> from_lua(lua_State* l, int n) {
+    template<typename Container, typename Helper> /* requires requires (Container container) {
+        container[0]; // requires operator[](int index) value access method
+
+        size_t(Helper::size(container));
+
+        // returns true if operation was successful
+        bool(Helper::set(container, // container to set value in
+                    0, // index
+                    container[0])); // value (container[0] is used to determine container value type)
+    }*/
+    struct array_like_converter {
+        // determines container element type
+        using element_t = std::decay_t<decltype(std::declval<Container>()[0])>;
+
+        static clg::converter_result<Container> from_lua(lua_State* l, int n) {
             clg::stack_integrity_check c(l);
             if (!lua_istable(l, n)) {
                 return converter_error{"not a table"};
             }
 
-            clg::table_array result;
+            Container result;
             if (n < 0) {
                 n = lua_gettop(l) + n + 1;
+            }
+            if constexpr (std::is_same_v<std::vector<element_t>, Container>) {
+                auto len = lua_rawlen(l, n);
+                result.reserve(len);
             }
             lua_pushnil(l);
             while (lua_next(l, n) != 0)
             {
-                auto keyRaw = clg::get_from_lua_raw<int>(l, -2);
+                // While traversing a table, do not call lua_tolstring directly on a key, unless you know that the key
+                // is actually a string. Recall that lua_tolstring may change the value at the given index; this
+                // confuses the next call to lua_next. (Lua manual, lua_next)
+                //
+                // This is why we should copy the key value.
+                lua_pushvalue(l, -2);
+                auto keyRaw = clg::get_from_lua_raw<int>(l, -1);
                 if (keyRaw.is_error()) {
-                    lua_pop(l, 2);
+                    lua_pop(l, 3);
                     return keyRaw.error();
                 }
                 auto key = *keyRaw - 1;
-                auto value = clg::get_from_lua<clg::ref>(l, -1);
-                lua_pop(l, 1);
-                if (key == result.size()) {
-                    result.push_back(std::move(value));
-                    continue;
+                auto value = clg::get_from_lua_raw<element_t>(l, -2);
+                lua_pop(l, 2);
+                if (value.is_error()) {
+                    lua_pop(l, 1);
+                    return value.error();
                 }
-                if (key > result.size()) {
-                    result.resize(key + 1);
+                if (!Helper::set(result, key, std::move(*value))) {
+                    lua_pop(l, 1);
+                    return converter_error{};
                 }
-                result[key] = std::move(value);
             }
             return result;
         }
 
-        static int to_lua(lua_State* l, const table_array& v) {
-            lua_createtable(l, v.size(), 0);
 
-            for (unsigned i = 0; i < v.size(); ++i) {
-                v[i].push_value_to_stack();
+        static int to_lua(lua_State* l, const Container& v) {
+            auto s = Helper::size(v);
+            lua_createtable(l, s, 0);
+
+            for (unsigned i = 0; i < s; ++i) {
+                clg::push_to_lua(l, v[i]);
                 lua_rawseti(l, -2, i + 1);
             }
             return 1;
         }
     };
+
+    namespace detail {
+        template<typename T>
+        struct array_like_converter_vector_helper {
+            static bool set(std::vector<T>& dest, std::size_t index, T value) {
+                if (index == dest.size()) {
+                    dest.push_back(std::move(value));
+                    return true;
+                }
+                if (index > dest.size()) {
+                    dest.resize(index);
+                }
+                dest[index] = std::move(value);
+                return true;
+            }
+
+            static size_t size(const std::vector<T>& v) {
+                return v.size();
+            }
+        };
+    }
+
+    template<typename T>
+    struct converter<std::vector<T>>: array_like_converter<std::vector<T>, detail::array_like_converter_vector_helper<T>> {};
 
 }

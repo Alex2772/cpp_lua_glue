@@ -68,7 +68,7 @@ namespace clg {
                             if constexpr (passthroughSubstitutionError) {
                                 return OVERLOADED_HELPER_SUBSTITUTION_FAILURE;
                             }
-                            throw clg_exception(error->errorLiteral);
+                            throw clg_exception(error->errorLiteral ? error->errorLiteral : "unknown converter failure");
                         }
 
 
