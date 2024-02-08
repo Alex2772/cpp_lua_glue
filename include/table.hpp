@@ -6,10 +6,7 @@
 
 #include "converter.hpp"
 #include "exception.hpp"
-#include "lua.h"
 #include "ref.hpp"
-#include "shared_ptr_helper.hpp"
-#include "value.hpp"
 #include <algorithm>
 #include <map>
 #include <string>
