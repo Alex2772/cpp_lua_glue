@@ -61,7 +61,7 @@ namespace clg {
 
     template<>
     struct converter<clg::table> {
-        static clg::converter_result<clg::table> from_lua(lua_State* l, int n) {
+        static clg::converter_result<clg::table> from_lua(lua_State* l, int n) noexcept {
             clg::stack_integrity_check c(l);
             if (!lua_istable(l, n)) {
                 return converter_error{"not a table"};
@@ -183,9 +183,10 @@ namespace clg {
                     dest.push_back(std::move(value));
                     return true;
                 }
-                if (index > dest.size()) {
-                    dest.resize(index);
+                if (index >= dest.size()) {
+                    dest.resize(index + 1);
                 }
+                assert(index < dest.size());
                 dest[index] = std::move(value);
                 return true;
             }
