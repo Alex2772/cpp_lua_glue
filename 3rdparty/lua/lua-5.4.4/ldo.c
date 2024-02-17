@@ -392,9 +392,8 @@ StkId luaD_tryfuncTM (lua_State *L, StkId func) {
   StkId p;
   checkstackGCp(L, 1, func);  /* space for metamethod */
   tm = luaT_gettmbyobj(L, s2v(func), TM_CALL);  /* (after previous GC) */
-  if (l_unlikely(ttisnil(tm))) {
-    return 0;
-  }
+  if (l_unlikely(ttisnil(tm)))
+    luaG_callerror(L, s2v(func));  /* nothing to call */
   for (p = L->top; p > func; p--)  /* open space for metamethod */
     setobjs2s(L, p, p-1);
   L->top++;  /* stack space pre-allocated by the caller */
@@ -554,18 +553,6 @@ int luaD_pretailcall (lua_State *L, CallInfo *ci, StkId func,
   }
 }
 
-static char gLastErrorStr[128];
-const char* luaG_callerrorextra(lua_State* L, const TValue* o);
-
-void (*kara_on_attempt_to_call_a_nil_value)(lua_State* L, const char* str) = NULL;
-static int kara_attempt_to_call_a_nil_value(lua_State* L) {
-  if (kara_on_attempt_to_call_a_nil_value) {
-    kara_on_attempt_to_call_a_nil_value(L, gLastErrorStr);
-  }
-  lua_pushnil(L);
-  lua_pushstring(L, gLastErrorStr);
-  return 2;
-}
 
 /*
 ** Prepares the call to a function (C or Lua). For C functions, also do
@@ -599,16 +586,7 @@ CallInfo *luaD_precall (lua_State *L, StkId func, int nresults) {
       return ci;
     }
     default: {  /* not a function */
-      StkId func2 = luaD_tryfuncTM(L, func);  /* try to get '__call' metamethod */
-      if (func2 == NULL) {
-        // kara patch: should return nil, "error string" instead of perror
-        gLastErrorStr[0] = 0;
-        strcpy(gLastErrorStr, "attempt to index a nil value");
-        strcat(gLastErrorStr, luaG_callerrorextra(L, s2v(func)));
-        precallC(L, func, nresults, kara_attempt_to_call_a_nil_value);
-        return NULL;
-      }
-      func = func2;
+      func = luaD_tryfuncTM(L, func);  /* try to get '__call' metamethod */
       /* return luaD_precall(L, func, nresults); */
       goto retry;  /* try again with metamethod */
     }

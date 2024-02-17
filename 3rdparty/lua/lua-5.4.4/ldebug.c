@@ -735,20 +735,16 @@ l_noret luaG_typeerror (lua_State *L, const TValue *o, const char *op) {
 }
 
 
-const char* luaG_callerrorextra(lua_State* L, const TValue* o) {
-  CallInfo *ci = L->ci;
-  const char *name = NULL;  /* to avoid warnings */
-  const char *kind = funcnamefromcall(L, ci, &name);
-  return kind ? formatvarinfo(L, kind, name) : varinfo(L, o);
-}
-
 /*
 ** Raise an error for calling a non-callable object. Try to find a name
 ** for the object based on how it was called ('funcnamefromcall'); if it
 ** cannot get a name there, try 'varinfo'.
 */
 l_noret luaG_callerror (lua_State *L, const TValue *o) {
-  const char* extra = luaG_callerrorextra(L, o);
+  CallInfo *ci = L->ci;
+  const char *name = NULL;  /* to avoid warnings */
+  const char *kind = funcnamefromcall(L, ci, &name);
+  const char *extra = kind ? formatvarinfo(L, kind, name) : varinfo(L, o);
   typeerror(L, o, "call", extra);
 }
 
