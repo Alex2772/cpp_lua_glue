@@ -21,19 +21,23 @@ namespace clg {
 
             using target_tuple = std::tuple<TupleArgs...>;
 
-            template<unsigned index>
-            std::optional<clg::converter_error> fill(target_tuple& t) {
+            template<unsigned tupleIndex>
+            std::optional<clg::converter_error> fill(target_tuple& t, int luaIndex = tupleIndex) {
                 return std::nullopt;
             }
 
-            template<unsigned index, typename Arg, typename... Args>
-            std::optional<clg::converter_error>fill(target_tuple& t) {
-                clg::converter_result<Arg> r = clg::get_from_lua_raw<Arg>(l, index + 1);
+            template<unsigned tupleIndex, typename Arg, typename... Args>
+            std::optional<clg::converter_error>fill(target_tuple& t, int luaIndex = tupleIndex) {
+                clg::converter_result<Arg> r = clg::get_from_lua_raw<Arg>(l, luaIndex + 1);
                 if (r.is_error()) {
                     return r.error();
                 }
-                std::get<index>(t) = std::move(*r);
-                return fill<index + 1, Args...>(t);
+                std::get<tupleIndex>(t) = std::move(*r);
+                if constexpr (std::is_same_v<lua_State*, Arg>) {
+                    // lua_State* is not taken from lua; we should omit it's index
+                    return fill<tupleIndex + 1, Args...>(t, luaIndex);
+                }
+                return fill<tupleIndex + 1, Args...>(t, luaIndex + 1);
             }
         };
 
@@ -48,11 +52,12 @@ namespace clg {
             struct instance {
                 static int call(lua_State* s) {
                     clg::checkThread();
+                    const size_t expectedArgCount = (0 + ... + int(!std::is_same_v<lua_State*, Args>));
                     try {
                         size_t argsCount = lua_gettop(s);
 
                         if constexpr (!is_vararg) {
-                            if (argsCount != sizeof...(Args)) {
+                            if (argsCount != expectedArgCount) {
                                 if constexpr (passthroughSubstitutionError) {
                                     return OVERLOADED_HELPER_SUBSTITUTION_FAILURE;
                                 }
@@ -73,17 +78,17 @@ namespace clg {
 
 
                         if constexpr (std::is_same_v<Return, builder_return_type>) {
-                            lua_pop(s, sizeof...(Args) - 1);
+                            lua_pop(s, expectedArgCount - 1);
                             (std::apply)(f, std::move(argsTuple));
                             return 1;
                         } else if constexpr (std::is_void_v<Return>) {
-                            lua_pop(s, sizeof...(Args));
+                            lua_pop(s, expectedArgCount);
                             // ничего не возвращается
                             (std::apply)(f, std::move(argsTuple));
                             return 0;
                         } else {
                             if constexpr (!is_vararg) {
-                                lua_pop(s, sizeof...(Args));
+                                lua_pop(s, expectedArgCount);
                             }
                             // возвращаем одно значение
                             return clg::push_to_lua(s, (std::apply)(f, std::move(argsTuple)));

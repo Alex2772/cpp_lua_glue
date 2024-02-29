@@ -93,8 +93,12 @@ namespace clg {
         }
 
         void push_value_to_stack() const noexcept {
-            assert(mLua != nullptr);
-            lua_rawgeti(mLua, LUA_REGISTRYINDEX, mPtr);
+            push_value_to_stack(mLua);
+        }
+
+        void push_value_to_stack(lua_State* l) const noexcept {
+            assert(l != nullptr);
+            lua_rawgeti(l, LUA_REGISTRYINDEX, mPtr);
         }
 
         std::string debug_str() const noexcept {
@@ -325,7 +329,7 @@ namespace clg {
                 lua_pushnil(l);
                 return 1;
             }
-            ref.push_value_to_stack();
+            ref.push_value_to_stack(l);
             return 1;
         }
     };

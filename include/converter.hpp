@@ -120,6 +120,14 @@ namespace clg {
             return nullptr;
         }
     };
+
+    template<>
+    struct converter<lua_State*> {
+        static converter_result<lua_State*> from_lua(lua_State* l, int n) {
+            return l;
+        }
+    };
+
     template<int N>
     struct converter<char[N]> {
         static converter_result<const char*> from_lua(lua_State* l, int n) {
