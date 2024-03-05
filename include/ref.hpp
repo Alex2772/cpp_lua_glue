@@ -10,6 +10,18 @@
 #include <type_traits>
 
 namespace clg {
+    namespace detail {
+
+        inline lua_State* main_thread(lua_State* L_, lua_State* backup_if_unsupported_ = nullptr) {
+            // https://github.com/ThePhD/sol2/blob/e8e122e9ce46f4f1c0b04003d8b703fe1b89755a/include/sol/reference.hpp#L220
+            if (L_ == nullptr)
+                return backup_if_unsupported_;
+            lua_rawgeti(L_, LUA_REGISTRYINDEX, LUA_RIDX_MAINTHREAD);
+            lua_State* Lmain = lua_tothread(L_, -1);
+            lua_pop(L_, 1);
+            return Lmain;
+        }
+	}
     class ref {
     public:
         ref() = default;
@@ -218,7 +230,9 @@ namespace clg {
             return r;
         }
 
-        ref(lua_State* state) noexcept: mLua(state), mPtr(incRef()) {}
+        ref(lua_State* state) noexcept: mLua(state), mPtr(incRef()) {
+            mLua = detail::main_thread(mLua, mLua);
+        }
     };
 
 

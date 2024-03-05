@@ -152,7 +152,8 @@ namespace clg {
             if (r.is_error()) {
                 return r.error();
             }
-            return clg::function{ l, std::move(*r) };
+            auto actualLua = (*r).lua();
+            return clg::function{ actualLua, std::move(*r) };
         }
         static int to_lua(lua_State* l, const clg::ref& ref) {
             ref.push_value_to_stack();
