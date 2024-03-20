@@ -206,7 +206,7 @@ namespace clg {
             } else {
                 auto& weakRef = lua_self_shared_ptr_holder(*v);
                 if (auto lock = weakRef.lock()) {
-                    lock.push_value_to_stack();
+                    lock.push_value_to_stack(l);
                     return 1;
                 }
 
