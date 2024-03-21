@@ -31,8 +31,8 @@ namespace clg {
         friend void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
     public:
 
-        const table_view& luaDataHolder() const noexcept {
-            return static_cast<const table_view&>(mWeakPtrAndDataHolder); // avoid copy
+        table_view luaDataHolder() const noexcept {
+            return {mWeakPtrAndDataHolder.lock()};
         }
 
 
@@ -45,9 +45,9 @@ namespace clg {
         virtual void handle_lua_virtual_func_assignment(std::string_view name, clg::ref value) {}
 
     private:
-        friend clg::ref& lua_self_weak_ptr_and_data_holder(lua_self& s);
+        friend clg::weak_ref& lua_self_weak_ptr_and_data_holder(lua_self& s);
         friend clg::weak_ref& lua_self_shared_ptr_holder(lua_self& s);
-        clg::ref      mWeakPtrAndDataHolder;
+        clg::weak_ref mWeakPtrAndDataHolder;
         clg::weak_ref mSharedPtrHolder;
 
     };
@@ -55,7 +55,7 @@ namespace clg {
         s.handle_lua_virtual_func_assignment(name, std::move(value));
     }
 
-    inline clg::ref& lua_self_weak_ptr_and_data_holder(lua_self& s) {
+    inline clg::weak_ref& lua_self_weak_ptr_and_data_holder(lua_self& s) {
         return s.mWeakPtrAndDataHolder;
     }
     inline clg::weak_ref& lua_self_shared_ptr_holder(lua_self& s) {
@@ -211,7 +211,7 @@ namespace clg {
                 }
 
                 auto& dataHolder = lua_self_weak_ptr_and_data_holder(*v);
-                if (dataHolder.isNull()) {
+                if (dataHolder.lock().isNull()) {
                     // should compose strong ref holder and weak ref holder objects
                     // weak ref and data holder object
                     lua_createtable(l, 0, 0);
@@ -235,10 +235,10 @@ namespace clg {
                     }
                     lua_setmetatable(l, -2);
 
-                    dataHolder = clg::ref::from_stack(l);
+                    dataHolder = clg::weak_ref(clg::ref::from_stack(l));
                 }
 
-                push_strong_ref_holder_object(l, std::move(v), dataHolder);
+                push_strong_ref_holder_object(l, std::move(v), dataHolder.lock());
                 lua_pushvalue(l, -1);
                 weakRef = clg::weak_ref(clg::ref::from_stack(l));
                 return 1;
