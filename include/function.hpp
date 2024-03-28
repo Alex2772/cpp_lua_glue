@@ -125,8 +125,8 @@ namespace clg {
             return v;
         }
 
-        static std::function<void()>& exception_callback() {
-            static std::function<void()> v;
+        static std::function<void(lua_State* l)>& exception_callback() {
+            static std::function<void(lua_State* l)> v;
             return v;
         }
 

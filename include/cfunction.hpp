@@ -95,7 +95,7 @@ namespace clg {
                         }
                     } catch (const std::exception& e) {
                         if (clg::function::exception_callback()) {
-                            clg::function::exception_callback()();
+                            clg::function::exception_callback()(s);
                         }
                         clg::push_to_lua(s, nullptr);
                         clg::push_to_lua(s, e.what());
