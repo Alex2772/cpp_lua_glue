@@ -214,7 +214,7 @@ namespace clg {
         int mPtr = -1;
 
         void releaseIfNotNull() {
-            if (mPtr != -1) {
+            if (mPtr != -1 && !clg::isInExitHandler()) {
                 clg::checkThread();
                 luaL_unref(mLua, LUA_REGISTRYINDEX, mPtr);
             }

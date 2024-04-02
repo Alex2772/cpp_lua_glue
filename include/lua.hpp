@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cstdlib>
 #include <thread>
 #include <cassert>
 
@@ -18,6 +19,15 @@ namespace clg {
     inline void checkThread() {
         static std::thread::id threadId = std::this_thread::get_id();
         assert(threadId == std::this_thread::get_id());
+    }
+
+    static bool isInExitHandler() {
+        // Lua seems feel bad on exit. Avoid unnecessary calls to Lua as the process is exiting anyway.
+        static bool v = false;
+        std::atexit([] {
+            v = true;
+        });
+        return v;
     }
 
 }
