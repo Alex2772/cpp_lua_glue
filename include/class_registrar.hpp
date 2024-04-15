@@ -67,6 +67,9 @@ namespace clg {
             template<typename... Args>
             struct wrapper_function_helper_t<state_interface::types<Args...>> {
                 static typename class_info::return_t method(std::shared_ptr<C> self, Args... args) {
+                    if (!self) {
+                        throw clg_exception("attempt to call class method for a nil value");
+                    }
                     if (std::is_same_v<void, typename class_info::return_t>) {
                         (self.get()->*methodPtr)(std::move(args)...);
                     } else {
@@ -74,6 +77,9 @@ namespace clg {
                     }
                 }
                 static clg::builder_return_type builder_method(std::shared_ptr<C> self, Args... args) {
+                    if (!self) {
+                        throw clg_exception("attempt to call class method for a nil value");
+                    }
                     (self.get()->*methodPtr)(std::move(args)...);
                     return {};
                 }
