@@ -24,9 +24,12 @@ namespace clg {
     static bool isInExitHandler() {
         // Lua seems feel bad on exit. Avoid unnecessary calls to Lua as the process is exiting anyway.
         static bool v = false;
-        std::atexit([] {
-            v = true;
-        });
+        if (static bool once = true; once) {
+            once = false;
+            std::atexit([] {
+                v = true;
+                });
+        }
         return v;
     }
 
