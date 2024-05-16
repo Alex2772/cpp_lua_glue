@@ -6,6 +6,7 @@
 
 #include <map>
 #include <memory>
+#include <type_traits>
 #include <variant>
 
 namespace clg {
@@ -69,12 +70,14 @@ namespace clg {
     };
 
     namespace impl {
-        struct ptr_helper {
-            virtual ~ptr_helper() = default;
+        struct dealloc_helper {
+            virtual ~dealloc_helper() = default;
         };
     }
 
-    struct shared_ptr_helper: impl::ptr_helper {
+    struct lua_self;
+
+    struct shared_ptr_helper: impl::dealloc_helper {
         std::shared_ptr<void> ptr;
         const std::type_info& type;
 
@@ -89,9 +92,10 @@ namespace clg {
 
         template<typename T>
         clg::converter_result<std::shared_ptr<T>> as() const {
+            static_assert(!std::is_base_of_v<clg::lua_self, T>);
             if constexpr (std::is_base_of_v<allow_lua_inheritance, T>) {
                 auto inheritance = reinterpret_cast<const std::shared_ptr<allow_lua_inheritance>&>(ptr);
-                return std::dynamic_pointer_cast<T>(inheritance);
+                return std::dynamic_pointer_cast<T>(std::move(inheritance));
             } else {
                 if (auto& expected = typeid(T); expected != type) {
                     static std::string e = std::string("type mismatch: expected ") + expected.name() + "\nnote: extend clg::allow_lua_inheritance to allow inheritance";
@@ -114,7 +118,7 @@ namespace clg {
     };
 
 
-    struct weak_ptr_helper: impl::ptr_helper {
+    struct weak_ptr_helper: impl::dealloc_helper {
         std::weak_ptr<void> ptr;
         const std::type_info& type;
 
