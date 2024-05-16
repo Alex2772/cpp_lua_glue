@@ -44,6 +44,7 @@ namespace clg {
         friend inline std::shared_ptr<T> make_shared(Args&&... args);
 
         friend struct shared_ptr_helper_lua_self;
+        friend struct shared_ptr_helper_lua_self_weak;
     public:
         lua_self() {
             printf("lua_self() %p\n", this);
@@ -188,40 +189,29 @@ namespace clg {
         }
     };
 
-    struct shared_ptr_helper_lua_self: impl::dealloc_helper {
+    struct shared_ptr_helper_lua_self_weak: impl::dealloc_helper {
         lua_self* ptr;
         const std::type_info& type;
         bool valid = true;
 
 
         template<typename T>
-        shared_ptr_helper_lua_self(T* ptr):
+        shared_ptr_helper_lua_self_weak(T* ptr):
             ptr(ptr),
             type(typeid(T))
         {
-            printf("shared_ptr_helper_lua_self() = %p, lua_self = %p\n\n", this, ptr);
         }
-        ~shared_ptr_helper_lua_self() override {
+        ~shared_ptr_helper_lua_self_weak() override {
             assert(valid);
             valid = false;
-            printf("~shared_ptr_helper_lua_self() = %p, lua_self = %p\n\n", this, ptr);
-            assert(ptr->lua);
-            auto extendSharedPtrLifetime = ptr->lua->ptr.lock();
-            ptr->lua.reset();
-            if (extendSharedPtrLifetime) {
-                // calls destroyIfBothCppAndLuaHasNoRefs() if cpp has no refs remaining as well
-                extendSharedPtrLifetime = nullptr;
-            } else {
-                ptr->destroyIfBothCppAndLuaHasNoRefs();
-            }
         }
 
         template<typename T>
         clg::converter_result<std::shared_ptr<T>> as() const {
             {
-                const auto* expected = typeid(shared_ptr_helper_lua_self).name();
-                const auto* actual = typeid(*this).name();
-                assert(strcmp(expected, actual) == 0);
+                // const auto* expected = typeid(shared_ptr_helper_lua_self_weak).name();
+                // const auto* actual = typeid(*this).name();
+                // assert(strcmp(expected, actual) == 0);
             }
             static int counter = 0;
             ++counter;
@@ -255,6 +245,7 @@ namespace clg {
 
                 assert(!weakPtr.expired());
                 sharedPtr = weakPtr.lock();
+                sharedPtr->cpp.emplace();
                 hack.control->strongs--;
                 assert(sharedPtr != nullptr);
                 assert(sharedPtr.use_count() == 1);
@@ -269,6 +260,27 @@ namespace clg {
                     return converter_error{e.c_str()};
                 }
                 return std::dynamic_pointer_cast<T>(std::move(sharedPtr));
+            }
+        }
+    };
+
+    struct shared_ptr_helper_lua_self: shared_ptr_helper_lua_self_weak {
+
+        template<typename T>
+        shared_ptr_helper_lua_self(T* ptr): shared_ptr_helper_lua_self_weak(ptr)
+        {
+            printf("shared_ptr_helper_lua_self() = %p, lua_self = %p\n\n", this, ptr);
+        }
+        ~shared_ptr_helper_lua_self() override {
+            printf("~shared_ptr_helper_lua_self() = %p, lua_self = %p\n\n", this, ptr);
+            assert(ptr->lua);
+            auto extendSharedPtrLifetime = ptr->lua->ptr.lock();
+            ptr->lua.reset();
+            if (extendSharedPtrLifetime) {
+                // calls destroyIfBothCppAndLuaHasNoRefs() if cpp has no refs remaining as well
+                extendSharedPtrLifetime = nullptr;
+            } else {
+                ptr->destroyIfBothCppAndLuaHasNoRefs();
             }
         }
     };
@@ -320,8 +332,8 @@ namespace clg {
         static void push_weak_ptr_userdata(lua_State* l, std::weak_ptr<T> v) {
             clg::stack_integrity_check c(l, 1);
             auto classname = clg::class_name<T>();
-            auto t = reinterpret_cast<weak_ptr_helper*>(lua_newuserdata(l, sizeof(weak_ptr_helper)));
-            new(t) weak_ptr_helper(std::move(v));
+            auto t = reinterpret_cast<shared_ptr_helper_lua_self_weak*>(lua_newuserdata(l, sizeof(shared_ptr_helper_lua_self_weak)));
+            new(t) shared_ptr_helper_lua_self_weak(v.lock().get());
 
 #if LUA_VERSION_NUM != 501
             auto r = lua_getglobal(l, classname.c_str());
@@ -383,7 +395,7 @@ namespace clg {
                     return;
                 }
 
-                auto r = reinterpret_cast<shared_ptr_helper_lua_self*>(lua_touserdata(L, -1))->as<T>();
+                auto r = reinterpret_cast<shared_ptr_helper_lua_self_weak*>(lua_touserdata(L, -1))->as<T>();
                 if (r.is_error()) {
                     throw std::runtime_error("failed to convert from shared_ptr_helper to as<T>");
                 }
