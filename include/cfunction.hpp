@@ -77,6 +77,22 @@ namespace clg {
                         }
 
 
+#if CLG_TRACE_CALLS
+                        assert(trace_name() != "unknown");
+                        printf("[clg] trace call %s(", trace_name().c_str());
+                        for (int i = 1; i <= argsCount; ++i) {
+                            if (i != 1) {
+                                printf(", ");
+                            }
+                            if (lua_istable(s, i)) {
+                                printf("<table>");
+                                continue;
+                            }
+                            printf("%s", clg::any_to_string(s, i, 1, false).c_str());
+                        }
+                        printf(")\n");
+#endif
+
                         if constexpr (std::is_same_v<Return, builder_return_type>) {
                             lua_pop(s, expectedArgCount - 1);
                             (std::apply)(f, std::move(argsTuple));
@@ -102,6 +118,13 @@ namespace clg {
                         return 2;
                     }
                 }
+
+#if CLG_TRACE_CALLS
+                static std::string& trace_name() {
+                    static std::string name = "unknown";
+                    return name;
+                }
+#endif
             };
         };
 
@@ -112,9 +135,12 @@ namespace clg {
     }
 
     template<auto f>
-    static constexpr lua_CFunction cfunction() {
+    static constexpr lua_CFunction cfunction(const std::string& name /* for trace */) {
         using my_register_function_helper = decltype(detail::make_register_function_helper(f));
         using my_instance = typename my_register_function_helper::template instance<f>;
+#if CLG_TRACE_CALLS
+        my_instance::trace_name() = name;
+#endif
         return my_instance::call;
     }
 }

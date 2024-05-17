@@ -4,6 +4,8 @@
 
 #pragma once
 
+#define CLG_TRACE_CALLS 0
+
 #include "lua.hpp"
 #include "converter.hpp"
 #include "dynamic_result.hpp"
@@ -183,7 +185,7 @@ namespace clg {
 
         template<auto f>
         void register_function(const std::string& name) {
-            register_function_raw(name, cfunction<f>());
+            register_function_raw(name, cfunction<f>(name));
         }
 
         template<typename Callable>
@@ -197,19 +199,23 @@ namespace clg {
         std::vector<lua_CFunction>& register_function_overloaded(const std::string& name, FirstCallable&& firstCallable, RestCallables&&... restCallables) {
             using helper = overloaded_helper<FirstCallable, RestCallables...>;
             auto& callable = helper::callable();
-            callable = { wrap_lambda_to_cfunction_for_overloading(std::forward<FirstCallable>(firstCallable)),
-                         wrap_lambda_to_cfunction_for_overloading(std::forward<RestCallables>(restCallables))...  };
+            callable = { wrap_lambda_to_cfunction_for_overloading(std::forward<FirstCallable>(firstCallable), name),
+                         wrap_lambda_to_cfunction_for_overloading(std::forward<RestCallables>(restCallables), name)...  };
             register_function_raw(name, helper::fake_lua_cfunction);
             return helper::callable();
         }
 
 
         template<typename Callable, bool passthroughSubstitutionError = false>
-        lua_CFunction wrap_lambda_to_cfunction(Callable&& callable) {
+        lua_CFunction wrap_lambda_to_cfunction(Callable&& callable, const std::string& name) {
             using helper = callable_helper<Callable>;
             constexpr auto f = helper::wrapper_function_helper::wrapper_function;
             using my_register_function_helper = decltype(clg::detail::make_register_function_helper(f));
             using my_instance = typename my_register_function_helper::template instance<f, passthroughSubstitutionError>;
+
+#if CLG_TRACE_CALLS
+            my_instance::trace_name() = name;
+#endif
 
             delete helper::callable();
             helper::callable() = new Callable(std::forward<Callable>(callable));
@@ -218,8 +224,8 @@ namespace clg {
         }
 
         template<typename Callable>
-        lua_CFunction wrap_lambda_to_cfunction_for_overloading(Callable&& callable) { // used only for register_function_overloaded
-            return wrap_lambda_to_cfunction<Callable, true>(std::forward<Callable>(callable));
+        lua_CFunction wrap_lambda_to_cfunction_for_overloading(Callable&& callable, const std::string& traceName) { // used only for register_function_overloaded
+            return wrap_lambda_to_cfunction<Callable, true>(std::forward<Callable>(callable), traceName);
         }
 
         template<typename ReturnType = void>
@@ -350,14 +356,14 @@ namespace clg {
 #include "table.hpp"
 #include "object_expose.hpp"
 
-inline std::string clg::any_to_string(lua_State* l, int n, int depth) {
+inline std::string clg::any_to_string(lua_State* l, int n, int depth, bool showMetatable) {
     if (depth <= 0) {
         return "<depth exceeded>";
     }
     std::stringstream ss;
 
     bool metatableDetected = false;
-    if (lua_getmetatable(l, n)) {
+    if (showMetatable && lua_getmetatable(l, n)) {
         metatableDetected = true;
         ss << "[ ";
         lua_pop(l, 1);
@@ -378,7 +384,7 @@ inline std::string clg::any_to_string(lua_State* l, int n, int depth) {
                 ss << ", ";
             }
             v.push_value_to_stack();
-            ss << "\"" << k << "\": " << any_to_string(l, -1, depth - 1);
+            ss << "\"" << k << "\": " << any_to_string(l, -1, depth - 1, showMetatable);
             lua_pop(l, 1);
         }
         ss << " }";
@@ -392,7 +398,7 @@ inline std::string clg::any_to_string(lua_State* l, int n, int depth) {
         ss << "\"?\"";
     }
 
-    if (lua_getmetatable(l, n)) {
+    if (showMetatable && lua_getmetatable(l, n)) {
         assert(metatableDetected);
         ss << ", " << any_to_string(l, -1, depth - 1) << " ]";
         lua_pop(l, 1);
