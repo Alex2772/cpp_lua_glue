@@ -4,7 +4,7 @@
 
 #pragma once
 
-#define CLG_TRACE_CALLS 0
+#define CLG_TRACE_CALLS 1
 
 #include "lua.hpp"
 #include "converter.hpp"
