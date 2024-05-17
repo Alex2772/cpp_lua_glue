@@ -63,6 +63,54 @@ namespace clg {
 
         virtual void handle_lua_virtual_func_assignment(std::string_view name, clg::ref value) {}
 
+        /**
+         * @brief Returns shared_ptr even if weak_ptr.lock() == nullptr
+         * @details
+         * Expects this to be valid.
+         *
+         * Used for obtaining a c++ shared_ptr if the object is hold by lua only.
+         */
+        std::shared_ptr<lua_self> reincarnate_shared_ptr_if_needed() {
+            auto& self = lua->ptr;
+            auto sharedPtr = self.lock();
+            if (sharedPtr) {
+                return sharedPtr;
+            }
+            printf("shared_ptr reincarnation! lua_self = %p\n", this);
+            // the lua land shared_ptr is dead, recreate it again (reincarnation)
+            struct control_block {
+                char padding[8];
+                int32_t strongs; // we could have made them atomic, but no thanks, wasted cycles on atomic operations
+                int32_t weaks;   //
+            };
+            struct weak_ptr_internals {
+                void* obj;
+                control_block* control;
+            };
+
+            auto& hack = reinterpret_cast<const weak_ptr_internals&>(self);
+
+            // compare the hacked fields with public data so we are hacking correctly
+            assert(hack.obj == this);
+            assert(hack.control->strongs == 0);
+
+            hack.control->strongs++;
+            // because one weak belongs to all shared_ptr's; as we don't have any shared_ptrs, incrementing this as
+            // well. We will decrement strongs later but not weaks
+            hack.control->weaks++;
+
+            assert(!self.expired());
+            sharedPtr = self.lock();
+            auto strongUserdata = mWeakPtrAndUserdataHolder.lock();
+            assert(!strongUserdata.isNull()); // if object comes from lua, lua should have kept userdata for us
+            cpp.emplace(std::move(strongUserdata));
+            hack.control->strongs--;
+            assert(sharedPtr != nullptr);
+            assert(sharedPtr.use_count() == 1);
+            assert(hack.control->strongs == 1);
+            return sharedPtr;
+        }
+
     private:
         /**
          * @brief Actual userdata table storage.
@@ -217,43 +265,8 @@ namespace clg {
             ++counter;
             static_assert(std::is_base_of_v<clg::lua_self, T>);
             assert(valid == true);
-            auto& weakPtr = ptr->lua->ptr;
-            auto sharedPtr = weakPtr.lock();
-            if (!sharedPtr) {
-                printf("shared_ptr reincarnation! lua_self = %p\n", ptr);
-                // the lua land shared_ptr is dead, recreate it again (reincarnation)
-                struct control_block {
-                    char padding[8];
-                    int32_t strongs; // we could have made them atomic, but no thanks, wasted cycles on atomic operations
-                    int32_t weaks;   //
-                };
-                struct weak_ptr_internals {
-                    void* obj;
-                    control_block* control;
-                };
-
-                auto& hack = reinterpret_cast<weak_ptr_internals&>(weakPtr);
-
-                // compare the hacked fields with public data so we are hacking correctly
-                assert(hack.obj == ptr);
-                assert(hack.control->strongs == 0);
-
-                hack.control->strongs++;
-                // because one weak belongs to all shared_ptr's; as we don't have any shared_ptrs, incrementing this as
-                // well. We will decrement strongs later but not weaks
-                hack.control->weaks++;
-
-                assert(!weakPtr.expired());
-                sharedPtr = weakPtr.lock();
-                auto strongUserdata = ptr->mWeakPtrAndUserdataHolder.lock();
-                assert(!strongUserdata.isNull()); // if object comes from lua, lua should have kept userdata for us
-                sharedPtr->cpp.emplace(std::move(strongUserdata));
-                hack.control->strongs--;
-                assert(sharedPtr != nullptr);
-                assert(sharedPtr.use_count() == 1);
-                assert(hack.control->strongs == 1);
-                assert(valid == true);
-            }
+            auto sharedPtr = ptr->reincarnate_shared_ptr_if_needed();
+            assert(valid == true);
             if constexpr (std::is_base_of_v<allow_lua_inheritance, T>) {
                 return std::dynamic_pointer_cast<T>(std::move(sharedPtr));
             } else {
