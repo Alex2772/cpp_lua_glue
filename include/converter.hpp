@@ -13,7 +13,7 @@
 
 namespace clg {
 
-    std::string any_to_string(lua_State* l, int n = -1, int depth = 8);
+    std::string any_to_string(lua_State* l, int n = -1, int depth = 8, bool showMetatable = true);
 
 
     template<typename T, typename EnableIf=void>

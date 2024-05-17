@@ -233,7 +233,7 @@ namespace clg {
 
                         clg::push_to_lua(l, clg::table{
                                 {"__index",    std::move(r)},
-                                {"__newindex", clg::ref::from_cpp(l, clg::cfunction<handle_virtual_func>())},
+                                {"__newindex", clg::ref::from_cpp(l, clg::cfunction<handle_virtual_func>("<handle virtual proc setter>"))},
                         });
                     } else {
                         clg::push_to_lua(l, clg::table{

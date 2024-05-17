@@ -276,6 +276,9 @@ namespace clg {
         class_registrar<C>& method(std::string name) {
             using wrapper_function_helper = typename method_helper<m>::wrapper_function_helper;
             using my_instance = typename wrapper_function_helper::my_instance;
+#if CLG_TRACE_CALLS
+            my_instance::trace_name() = name;
+#endif
             mMethods.push_back({
                std::move(name),
                my_instance::call
@@ -284,9 +287,10 @@ namespace clg {
         }
         template<typename Callable>
         class_registrar<C>& method(std::string name, Callable&& callable) {
+            auto v = mClg.wrap_lambda_to_cfunction(std::forward<Callable>(callable), name);
             mMethods.push_back({
                std::move(name),
-               mClg.wrap_lambda_to_cfunction(std::forward<Callable>(callable))
+               v
             });
             return *this;
         }
@@ -295,6 +299,9 @@ namespace clg {
         class_registrar<C>& builder_method(std::string name) {
             using wrapper_function_helper = typename method_helper<m>::wrapper_function_helper;
             using my_instance = typename wrapper_function_helper::my_instance_builder;
+#if CLG_TRACE_CALLS
+            my_instance::trace_name() = name;
+#endif
             mMethods.push_back({
                std::move(name),
                my_instance::call
@@ -306,11 +313,13 @@ namespace clg {
         class_registrar<C>& staticFunction(std::string name) {
             using wrapper_function_helper = typename static_function_helper<m>::wrapper_function_helper;
 
-#if LUA_VERSION_NUM == 501
-            constexpr auto call = wrapper_function_helper::my_instance_no_this::call;
-#else
-            constexpr auto call = wrapper_function_helper::my_instance_no_this::call;
+            using my_instance = wrapper_function_helper::my_instance_no_this;
+
+#if CLG_TRACE_CALLS
+            my_instance::trace_name() = name;
 #endif
+
+            constexpr auto call = my_instance::call;
             mStaticFunctions.push_back({
                std::move(name),
                call
@@ -320,7 +329,7 @@ namespace clg {
 
         template<typename Callable>
         class_registrar<C>& staticFunction(std::string name, Callable&& callback) {
-            auto wrap = mClg.wrap_lambda_to_cfunction(std::forward<Callable>(callback));
+            auto wrap = mClg.wrap_lambda_to_cfunction(std::forward<Callable>(callback), name);
 
             mStaticFunctions.push_back({
                std::move(name),
@@ -331,7 +340,7 @@ namespace clg {
 
         template<typename Callable>
         class_registrar<C>& meta(std::string name, Callable&& callback) {
-            auto wrap = mClg.wrap_lambda_to_cfunction(std::forward<Callable>(callback));
+            auto wrap = mClg.wrap_lambda_to_cfunction(std::forward<Callable>(callback), name);
 
             mMetaFunctions.push_back({
                                                std::move(name),
@@ -344,11 +353,13 @@ namespace clg {
         class_registrar<C>& meta(std::string name) {
             using wrapper_function_helper = typename static_function_helper<m>::wrapper_function_helper;
 
-#if LUA_VERSION_NUM == 501
-            constexpr auto call = wrapper_function_helper::my_instance_no_this::call;
-#else
-            constexpr auto call = wrapper_function_helper::my_instance_no_this::call;
+            using my_instance = wrapper_function_helper::my_instance_no_this;
+
+#if CLG_TRACE_CALLS
+            my_instance::trace_name() = name;
 #endif
+
+            constexpr auto call = my_instance::call;
             mMetaFunctions.push_back({
                  std::move(name),
                  call
