@@ -313,7 +313,7 @@ namespace clg {
         class_registrar<C>& staticFunction(std::string name) {
             using wrapper_function_helper = typename static_function_helper<m>::wrapper_function_helper;
 
-            using my_instance = wrapper_function_helper::my_instance_no_this;
+            using my_instance = typename wrapper_function_helper::my_instance_no_this;
 
 #if CLG_TRACE_CALLS
             my_instance::trace_name() = name;
@@ -353,7 +353,7 @@ namespace clg {
         class_registrar<C>& meta(std::string name) {
             using wrapper_function_helper = typename static_function_helper<m>::wrapper_function_helper;
 
-            using my_instance = wrapper_function_helper::my_instance_no_this;
+            using my_instance = typename wrapper_function_helper::my_instance_no_this;
 
 #if CLG_TRACE_CALLS
             my_instance::trace_name() = name;
