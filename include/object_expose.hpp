@@ -1,7 +1,13 @@
 #pragma once
 
-#include "weak_ref.hpp"
+#include <cstring>
+#include "lauxlib.h"
+#include "lua.h"
+#include "lua.hpp"
+#include "ref.hpp"
+#include "shared_ptr_helper.hpp"
 #include "table.hpp"
+#include "weak_ref.hpp"
 
 namespace clg {
     class lua_self;
@@ -28,40 +34,32 @@ namespace clg {
      * @endcode
      */
     class lua_self {
+        template<typename T, typename EnableIf>
+        friend struct converter_shared_ptr_impl;
         friend void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
     public:
 
-        const table_view& luaDataHolder() const noexcept {
-            return static_cast<const table_view&>(mWeakPtrAndDataHolder); // avoid copy
+        table_view luaDataHolder() const noexcept {
+            return luaSelf();
         }
 
 
     protected:
 
         clg::ref luaSelf() const noexcept {
-            return mSharedPtrHolder.lock();
+            return mLuaRepresentation.lock();
         }
 
         virtual void handle_lua_virtual_func_assignment(std::string_view name, clg::ref value) {}
 
     private:
-        friend clg::ref& lua_self_weak_ptr_and_data_holder(lua_self& s);
-        friend clg::weak_ref& lua_self_shared_ptr_holder(lua_self& s);
-        clg::ref      mWeakPtrAndDataHolder;
-        clg::weak_ref mSharedPtrHolder;
+        clg::weak_ref mLuaRepresentation;
+        // lua_State* mOriginLuaState = nullptr; // just to check coroutine stuff
 
     };
     inline void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value) {
         s.handle_lua_virtual_func_assignment(name, std::move(value));
     }
-
-    inline clg::ref& lua_self_weak_ptr_and_data_holder(lua_self& s) {
-        return s.mWeakPtrAndDataHolder;
-    }
-    inline clg::weak_ref& lua_self_shared_ptr_holder(lua_self& s) {
-        return s.mSharedPtrHolder;
-    }
-
 
     /**
      * userdata
@@ -71,13 +69,18 @@ namespace clg {
         static constexpr bool use_lua_self = std::is_base_of_v<clg::lua_self, T>;
 
         static converter_result<std::shared_ptr<T>> from_lua(lua_State* l, int n) {
+            stack_integrity_check check(l);
             if (lua_isnil(l, n)) {
                 return std::shared_ptr<T>(nullptr);
             }
 
             if constexpr(use_lua_self) {
                 if (lua_istable(l, n)) {
-                    lua_getfield(l, n, "clg_strongref");
+                    if (luaL_getmetafield(l, n, "__index") == 0) {
+                        // If the object does not have a metatable, or if the metatable does not have this field,
+                        // returns 0 and pushes nothing.
+                        return clg::converter_error{"not a cpp object"};
+                    }
                     if (!lua_isuserdata(l, -1)) {
                         lua_pop(l, 1);
                         return clg::converter_error{"not a cpp object"};
@@ -116,40 +119,8 @@ namespace clg {
             }
         }
 
-        static void push_weak_ptr_userdata(lua_State* l, std::weak_ptr<T> v) {
-            clg::stack_integrity_check c(l, 1);
-            auto classname = clg::class_name<T>();
-            auto t = reinterpret_cast<weak_ptr_helper*>(lua_newuserdata(l, sizeof(weak_ptr_helper)));
-            new(t) weak_ptr_helper(std::move(v));
-
-#if LUA_VERSION_NUM != 501
-            auto r = lua_getglobal(l, classname.c_str());
-#else
-            lua_getglobal(l, classname.c_str());
-            auto r = lua_type(l, -1);
-#endif
-            if (r != LUA_TNIL)
-            {
-                if (lua_getmetatable(l, -1)) {
-                    lua_setmetatable(l, -3);
-                }
-                lua_pop(l, 1);
-            }
-        }
-
-        static void push_strong_ref_holder_object(lua_State* l, std::shared_ptr<T> v, clg::ref dataHolderRef) {
-            push_shared_ptr_userdata(l, std::move(v));
-            clg::push_to_lua(l, clg::table{{"clg_strongref", clg::ref::from_stack(l)}});
-            clg::push_to_lua(l, clg::table{
-                { "__index", dataHolderRef },
-                { "__newindex", std::move(dataHolderRef) },
-            });
-            lua_setmetatable(l, -2);
-        }
-
-        static void handle_virtual_func(clg::table_view table, std::string_view key, clg::ref value) {
-            clg::table_view(clg::table_view(table.metatable())["__index"].ref())[key] = value;
-            const auto L = table.lua();
+        static void handle_virtual_func(clg::table_view table, std::string_view key, clg::ref value, lua_State* L) {
+            table.raw_set(key, value, L);
             if constexpr (use_lua_self) {
                 try {
                     clg::stack_integrity_check check(L);
@@ -157,29 +128,11 @@ namespace clg {
                         return;
                     }
 
-                    clg::table_view meta = table.metatable();
-                    if (meta.isNull()) {
-                        return;
-                    }
-
-                    auto index1 = meta["__index"].ref();
-                    if (index1.isNull()) {
-                        return;
-                    }
-
-                    clg::table_view index1Metatable = index1.metatable();
-                    if (index1Metatable.isNull()) {
-                        return;
-                    }
-
-                    auto index2 = index1Metatable["__index"].ref();
-                    if (index2.isNull()) {
-                        return;
-                    }
-                    index2.push_value_to_stack();
+                    table.push_value_to_stack(L);
+                    luaL_getmetafield(L, -1, "__index");
 
                     if (!lua_isuserdata(L, -1)) {
-                        lua_pop(L, 1);
+                        lua_pop(L, 2);
                         return;
                     }
 
@@ -190,10 +143,46 @@ namespace clg {
                     auto& object = *r;
 
                     impl::invoke_handle_lua_virtual_func_assignment(*(object.get()), key, std::move(value));
-                    lua_pop(L, 1);
+                    lua_pop(L, 2);
                 } catch (...) {}
             }
         };
+
+        static int handle_gc(lua_State* l) {
+            if (lua_istable(l, 1)) {
+                // TODO: if lua's data is empty, we don't need to store it somewhere
+
+                luaL_getmetafield(l, 1, "__index");
+                auto& helper = *static_cast<shared_ptr_helper*>(lua_touserdata(l, -1));
+                lua_pop(l, 1);
+                if (helper.ptr.use_count() == 1) {
+                    helper.~shared_ptr_helper();
+                    return 0;
+                }
+
+                // renew the weak reference
+                auto sharedPtr = (*helper.as<T>());
+                auto strongRefToRepr = clg::ref::from_stack(l);
+                assert(!strongRefToRepr.isNull());
+                sharedPtr->mLuaRepresentation.emplace(strongRefToRepr, l);
+
+                // block lua from destroying the representation on this gc iteration
+                lua_getglobal(l, "__clg_gc_block");
+                if (lua_isnil(l, -1)) {
+                    lua_pop(l, 1);
+                    lua_createtable(l, 0, 1024);
+
+                    lua_pushvalue(l, -1);
+                    lua_setglobal(l, "__clg_gc_block");
+                }
+                
+                strongRefToRepr.push_value_to_stack(l); // k
+                lua_pushinteger(l, 0); // v
+                lua_settable(l, -3);
+                return 0;
+            }
+            return 0;
+        }
 
         static int to_lua(lua_State* l, std::shared_ptr<T> v) {
             if (v == nullptr) {
@@ -204,43 +193,29 @@ namespace clg {
             if constexpr(!use_lua_self) {
                 push_shared_ptr_userdata(l, std::move(v));
             } else {
-                auto& weakRef = lua_self_shared_ptr_holder(*v);
-                if (auto lock = weakRef.lock()) {
-                    lock.push_value_to_stack(l);
+                if (auto luaRepresentation = v->mLuaRepresentation.lock(); !luaRepresentation.isNull()) {
+                    luaRepresentation.push_value_to_stack(l);
                     return 1;
                 }
+                // if (v->mOriginLuaState != nullptr) {
+                //     assert(v->mOriginLuaState == l);
+                // } else {
+                //     v->mOriginLuaState = l;
+                // }
 
-                auto& dataHolder = lua_self_weak_ptr_and_data_holder(*v);
-                if (dataHolder.isNull()) {
-                    // should compose strong ref holder and weak ref holder objects
-                    // weak ref and data holder object
-                    lua_createtable(l, 0, 0);
-                    push_weak_ptr_userdata(l, v);
+                // the object has no active representation.
+                push_shared_ptr_userdata(l, v);
+                auto sharedPtr = clg::ref::from_stack(l);
 
-                    if constexpr (use_lua_self) {
-                        auto r = clg::ref::from_cpp(l, clg::table{});
-                        r.set_metatable(clg::table{
-                               { "__index", clg::ref::from_stack(l) },
-                        });
+                clg::ref luaRepresentation = clg::ref::from_cpp(l, clg::table{});
 
-
-                        clg::push_to_lua(l, clg::table{
-                                {"__index",    std::move(r)},
-                                {"__newindex", clg::ref::from_cpp(l, clg::cfunction<handle_virtual_func>("<handle virtual proc setter>"))},
-                        });
-                    } else {
-                        clg::push_to_lua(l, clg::table{
-                                {"__index",    clg::ref::from_stack(l)},
-                        });
-                    }
-                    lua_setmetatable(l, -2);
-
-                    dataHolder = clg::ref::from_stack(l);
-                }
-
-                push_strong_ref_holder_object(l, std::move(v), dataHolder);
-                lua_pushvalue(l, -1);
-                weakRef = clg::weak_ref(clg::ref::from_stack(l));
+                luaRepresentation.set_metatable(clg::table{
+                        {"__newindex", clg::ref::from_cpp(l, clg::cfunction<handle_virtual_func>("<handle virtual proc setter>"))},
+                        {"__gc", clg::ref::from_cpp(l, lua_CFunction(handle_gc)) },
+                        {"__index", sharedPtr},
+                });
+                v->mLuaRepresentation = luaRepresentation;
+                luaRepresentation.push_value_to_stack(l);
                 return 1;
             }
             return 1;

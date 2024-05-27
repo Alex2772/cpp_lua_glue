@@ -14,6 +14,12 @@ namespace clg {
     static constexpr int OVERLOADED_HELPER_SUBSTITUTION_FAILURE = -228;
     namespace detail {
 
+        inline void clean_temp_table(lua_State* l) {
+            clg::stack_integrity_check c(l);
+            lua_pushnil(l);
+            lua_setglobal(l, "__clg_gc_block");
+        }
+
         template<typename... TupleArgs>
         struct tuple_fill_from_lua_helper {
             lua_State* l;
@@ -52,6 +58,9 @@ namespace clg {
             struct instance {
                 static int call(lua_State* s) {
                     clg::checkThread();
+                    
+                    clean_temp_table(s);
+
                     const size_t expectedArgCount = (0 + ... + int(!std::is_same_v<lua_State*, Args>));
                     try {
                         size_t argsCount = lua_gettop(s);

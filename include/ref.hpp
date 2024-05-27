@@ -1,7 +1,9 @@
 #pragma once
 
+#include "lua.h"
 #include "lua.hpp"
 #include "converter.hpp"
+#include "util.hpp"
 #include "value.hpp"
 #include <cassert>
 #include <algorithm>
@@ -316,14 +318,22 @@ namespace clg {
 
 
         template<typename K, typename V>
-        void raw_set(const K& key, const V& value) const noexcept {
-            const auto L = lua();
+        void raw_set(const K& key, const V& value, lua_State* L) const noexcept {
             clg::stack_integrity_check c(L);
-            push_value_to_stack();
+            push_value_to_stack(L);
             clg::push_to_lua(L, key);
             clg::push_to_lua(L, value);
             lua_rawset(L, -3);
             lua_pop(L, 1);
+        }
+
+        size_t size() const noexcept {
+            clg::stack_integrity_check c(lua());
+            push_value_to_stack();
+            lua_len(lua(), -1);
+            auto v = clg::get_from_lua<int>(lua());
+            lua_pop(lua(), 2);
+            return v;
         }
 
         value_view operator[](std::string_view v) const {
