@@ -170,18 +170,18 @@ namespace clg {
     };
 
     template<typename T>
-    static converter_result<T> get_from_lua_raw(lua_State* l, int index = -1) {
+    static converter_result<T> get_from_lua_raw(lua_State* l = clg::state(), int index = -1) {
         // incomplete type 'clg::converter<...>' error here means converter is not defined or not reachable (missing #include)
         static_assert(std::is_same_v<decltype(converter<T>::from_lua(l, index)), converter_result<T>>, 
                       "converter<T>::from_lua is expected to return converter_result<T>");
-        clg::checkThread();
+        clg::check_thread();
         converter_result<T> t = converter<T>::from_lua(l, index);
         return t;
     }
 
     template<typename T>
-    static T get_from_lua(lua_State* l, int index = -1) {
-        clg::checkThread();
+    static T get_from_lua(lua_State* l = clg::state(), int index = -1) {
+        clg::check_thread();
 
         converter_result<T> result = get_from_lua_raw<T>(l, index);
         if (result.is_error()) {
@@ -196,8 +196,8 @@ namespace clg {
     }
 
     template<typename T>
-    static T pop_from_lua(lua_State* l) {
-        clg::checkThread();
+    static T pop_from_lua(lua_State* l = clg::state()) {
+        clg::check_thread();
 
         converter_result<T> result = get_from_lua_raw<T>(l, -1);
         lua_pop(l, 1);
@@ -220,7 +220,7 @@ namespace clg {
      */
     template<typename T>
     static int push_to_lua(lua_State* l, const T& value) {
-        clg::checkThread();
+        clg::check_thread();
         return converter<T>::to_lua(l, value);
     }
 

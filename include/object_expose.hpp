@@ -1,5 +1,6 @@
 #pragma once
 
+#include "lua.hpp"
 #include "weak_ref.hpp"
 #include "table.hpp"
 
@@ -149,7 +150,7 @@ namespace clg {
 
         static void handle_virtual_func(clg::table_view table, std::string_view key, clg::ref value) {
             clg::table_view(clg::table_view(table.metatable())["__index"].ref())[key] = value;
-            const auto L = table.lua();
+            const auto L = clg::state();
             if constexpr (use_lua_self) {
                 try {
                     clg::stack_integrity_check check(L);

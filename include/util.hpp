@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "lua.hpp"
 #if defined(__linux) || defined(__APPLE__)
 #include <cxxabi.h>
 #endif
@@ -37,7 +38,7 @@ namespace clg {
      */
     struct stack_integrity_check {
     public:
-        stack_integrity_check(lua_State* lua, int expectedDifference = 0): mLua(lua), mExpectedDifference(expectedDifference) {
+        stack_integrity_check(lua_State* lua = clg::state(), int expectedDifference = 0): mLua(lua), mExpectedDifference(expectedDifference) {
             mStackBegin = lua_gettop(mLua);
         }
 

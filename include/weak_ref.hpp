@@ -6,12 +6,20 @@
 namespace clg {
     class weak_ref {
     public:
-        weak_ref(ref r): mWrapperObject(clg::ref::from_cpp(r.lua(), clg::table{
-            {"value", r },
-        })) {
-            const auto L = mWrapperObject.lua();
+        weak_ref(ref r) {
+            emplace(std::move(r));
+        }
+
+        weak_ref() {
+
+        }
+
+        void emplace(ref r, lua_State* L = clg::state()) {
             clg::stack_integrity_check check(L);
-            mWrapperObject.push_value_to_stack();
+            mWrapperObject = clg::ref::from_cpp(L, clg::table{
+                {"value", std::move(r) },
+            });
+            mWrapperObject.push_value_to_stack(L);
 
             clg::push_to_lua(L, clg::table{
                 { "__mode", clg::ref::from_cpp(L, "v") }, // weak reference mode for mWrapperObject's fields
@@ -19,10 +27,6 @@ namespace clg {
 
             lua_setmetatable(L, -2);
             lua_pop(L, 1);
-        }
-
-        weak_ref() {
-
         }
 
         clg::ref lock() const noexcept {

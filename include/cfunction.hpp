@@ -51,7 +51,9 @@ namespace clg {
             template<function_t f, bool passthroughSubstitutionError = false>
             struct instance {
                 static int call(lua_State* s) {
-                    clg::checkThread();
+                    clg::check_thread();
+                    clg::impl::raii_state_updater updater(s);
+                    
                     const size_t expectedArgCount = (0 + ... + int(!std::is_same_v<lua_State*, Args>));
                     try {
                         size_t argsCount = lua_gettop(s);

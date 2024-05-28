@@ -288,7 +288,7 @@ namespace clg {
          */
         function global_function(std::string_view v) {
             lua_getglobal(mState, v.data());
-            return {clg::ref::from_stack(*this), *this};
+            return {clg::ref::from_stack(*this)};
         }
         /**
          * @brief Получение глобальной переменной.
@@ -310,9 +310,9 @@ namespace clg {
      * В отличии от interface, этот класс сам создаёт виртуальную машину Lua, загружает базовые библиотеки и отвечает за
      * её освобождение.
      */
-    class vm: public state_interface {
+    class vm: public state_interface, impl::raii_state_updater {
     public:
-        vm(): state_interface(luaL_newstate()) {
+        vm(): state_interface(luaL_newstate()), impl::raii_state_updater(state_interface::operator lua_State *()) {
             luaL_openlibs(*this);
             init_global_functions();
         }
