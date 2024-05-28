@@ -57,7 +57,8 @@ namespace clg {
             template<function_t f, bool passthroughSubstitutionError = false>
             struct instance {
                 static int call(lua_State* s) {
-                    clg::checkThread();
+                    clg::check_thread();
+                    clg::impl::raii_state_updater updater(s);
                     
                     clean_temp_table(s);
 

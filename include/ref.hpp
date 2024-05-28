@@ -27,16 +27,15 @@ namespace clg {
     class ref {
     public:
         ref() = default;
-        ref(const ref& other) noexcept: mLua(other.mLua), mPtr([&] {
-            if (other.mLua) {
+        ref(const ref& other) noexcept: mPtr([&] {
+            if (!other.isNull()) {
                 other.push_value_to_stack();
-                clg::checkThread();
+                clg::check_thread();
                 return incRef();
             }
             return -1;
         }()) {}
-        ref(ref&& other) noexcept: mLua(other.mLua), mPtr(other.mPtr) {
-            other.mLua = nullptr;
+        ref(ref&& other) noexcept: mPtr(other.mPtr) {
             other.mPtr = -1;
         }
 
@@ -49,19 +48,16 @@ namespace clg {
         }
 
         ref& operator=(ref&& other) noexcept {
-            mLua = other.mLua;
             mPtr = other.mPtr;
-            other.mLua = nullptr;
             other.mPtr = -1;
             return *this;
         }
         ref& operator=(const ref& other) noexcept {
-            if (mLua == other.mLua && mPtr == other.mPtr) return *this;
-            mLua = other.mLua;
+            if (mPtr == other.mPtr) return *this;
             mPtr = [&] {
-                if (other.mLua) {
+                if (!other.isNull()) {
                     other.push_value_to_stack();
-                    clg::checkThread();
+                    clg::check_thread();
                     return incRef();
                 }
                 return -1;
@@ -80,37 +76,33 @@ namespace clg {
             return *this;
         }
 
-        static ref from_stack(lua_State* state) noexcept {
+        static ref from_stack(lua_State* state = clg::state()) noexcept {
             assert(("from_stack with an empty stack?", lua_gettop(state) > 0));
             return { state };
         }
 
         clg::ref metatable() const noexcept {
-            clg::stack_integrity_check check(mLua);
+            clg::stack_integrity_check check(clg::state());
             push_value_to_stack();
-            if (lua_getmetatable(mLua, -1)) {
-                auto value = from_stack(mLua);
-                lua_pop(mLua, 1);
+            if (lua_getmetatable(clg::state(), -1)) {
+                auto value = from_stack(clg::state());
+                lua_pop(clg::state(), 1);
                 return value;
             }
-            lua_pop(mLua, 1);
+            lua_pop(clg::state(), 1);
             return nullptr;
         }
 
         template<typename Value>
         void set_metatable(const Value& meta) noexcept {
-            clg::stack_integrity_check check(mLua);
+            clg::stack_integrity_check check(clg::state());
             push_value_to_stack();
-            clg::push_to_lua(mLua, meta);
-            lua_setmetatable(mLua, -2);
-            lua_pop(mLua, 1);
+            clg::push_to_lua(clg::state(), meta);
+            lua_setmetatable(clg::state(), -2);
+            lua_pop(clg::state(), 1);
         }
 
-        void push_value_to_stack() const noexcept {
-            push_value_to_stack(mLua);
-        }
-
-        void push_value_to_stack(lua_State* l) const noexcept {
+        void push_value_to_stack(lua_State* l = clg::state()) const noexcept {
             assert(l != nullptr);
             lua_rawgeti(l, LUA_REGISTRYINDEX, mPtr);
         }
@@ -119,10 +111,10 @@ namespace clg {
             if (isNull()) {
                 return "\"nil\"";
             }
-            clg::stack_integrity_check check(mLua);
+            clg::stack_integrity_check check(clg::state());
             push_value_to_stack();
-            auto s = clg::any_to_string(mLua, -1);
-            lua_pop(mLua, 1);
+            auto s = clg::any_to_string(clg::state(), -1);
+            lua_pop(clg::state(), 1);
             return s;
         }
 
@@ -135,10 +127,10 @@ namespace clg {
         }
 
         bool isFunction() const noexcept {
-            clg::stack_integrity_check check(mLua);
+            clg::stack_integrity_check check(clg::state());
             push_value_to_stack();
-            bool value = lua_isfunction(mLua, -1);
-            lua_pop(mLua, 1);
+            bool value = lua_isfunction(clg::state(), -1);
+            lua_pop(clg::state(), 1);
             return value;
         }
 
@@ -155,20 +147,20 @@ namespace clg {
             } else {
                 assert(!isNull());
             }
-            stack_integrity_check check(mLua);
+            stack_integrity_check check(clg::state());
             push_value_to_stack();
 
-            return clg::pop_from_lua<T>(mLua);
+            return clg::pop_from_lua<T>(clg::state());
         }
 
         template<typename T>
         converter_result<T> as_converter_result() const {
             assert(!isNull());
-            stack_integrity_check check(mLua);
+            stack_integrity_check check(clg::state());
             push_value_to_stack();
 
-            auto v = clg::get_from_lua_raw<T>(mLua, -1);
-            lua_pop(mLua, 1);
+            auto v = clg::get_from_lua_raw<T>(clg::state(), -1);
+            lua_pop(clg::state(), 1);
             return v;
         }
 
@@ -178,7 +170,7 @@ namespace clg {
                 return std::nullopt;
             }
 
-            stack_integrity_check check(mLua);
+            stack_integrity_check check(clg::state());
             auto r = as_converter_result<T>();
             if (r.is_error()) {
                 return std::nullopt;
@@ -186,17 +178,13 @@ namespace clg {
             return *r;
         }
 
-        lua_State* lua() const noexcept {
-            return mLua;
-        }
-
         [[nodiscard]]
         bool operator==(const clg::ref& r) const noexcept {
-            stack_integrity_check check(mLua);
+            stack_integrity_check check(clg::state());
             push_value_to_stack();
             r.push_value_to_stack();
-            bool result = lua_compare(mLua, -1, -2, LUA_OPEQ) == 1;
-            lua_pop(mLua, 2);
+            bool result = lua_compare(clg::state(), -1, -2, LUA_OPEQ) == 1;
+            lua_pop(clg::state(), 2);
 
             return result;
         }
@@ -212,28 +200,26 @@ namespace clg {
         }
 
     private:
-        lua_State* mLua = nullptr;
         int mPtr = -1;
 
         void releaseIfNotNull() {
-            if (mPtr != -1 && !clg::isInExitHandler()) {
-                clg::checkThread();
-                luaL_unref(mLua, LUA_REGISTRYINDEX, mPtr);
+            if (mPtr != -1 && !clg::is_in_exit_handler()) {
+                clg::check_thread();
+                luaL_unref(clg::state(), LUA_REGISTRYINDEX, mPtr);
             }
         }
 
         int incRef() {
-            if (lua_isnil(mLua, -1)) {
-                lua_pop(mLua, 1);
+            if (lua_isnil(clg::state(), -1)) {
+                lua_pop(clg::state(), 1);
                 return -1;
             }
 
-            auto r = luaL_ref(mLua, LUA_REGISTRYINDEX);
+            auto r = luaL_ref(clg::state(), LUA_REGISTRYINDEX);
             return r;
         }
 
-        ref(lua_State* state) noexcept: mLua(state), mPtr(incRef()) {
-            mLua = detail::main_thread(mLua, mLua);
+        ref(lua_State* state) noexcept: mPtr(incRef()) {
         }
     };
 
@@ -249,8 +235,8 @@ namespace clg {
             template<typename T>
             [[nodiscard]]
             T as() const {
-                const auto L = table.lua();
-                table.push_value_to_stack();
+                const auto L = clg::state();
+                table.push_value_to_stack(L);
                 if (!lua_istable(L, -1)) {
                     lua_pop(L, 1);
                     throw clg_exception("not a table view");
@@ -264,8 +250,8 @@ namespace clg {
             template<typename T>
             [[nodiscard]]
             std::optional<T> is() const {
-                const auto L = table.lua();
-                table.push_value_to_stack();
+                const auto L = clg::state();
+                table.push_value_to_stack(L);
                 if (!lua_istable(L, -1)) {
                     lua_pop(L, 1);
                     throw clg_exception("not a table view");
@@ -286,7 +272,7 @@ namespace clg {
 
             [[nodiscard]]
             clg::ref ref() const {
-                clg::stack_integrity_check c(table.lua());
+                clg::stack_integrity_check c;
                 return as<clg::ref>();
             }
 
@@ -297,7 +283,7 @@ namespace clg {
 
             template<typename T>
             const T& operator=(const T& t) const noexcept {
-                const auto L = table.lua();
+                const auto L = clg::state();
                 clg::stack_integrity_check c(L);
                 table.push_value_to_stack();
                 lua_pushstring(L, name.data());
@@ -318,7 +304,7 @@ namespace clg {
 
 
         template<typename K, typename V>
-        void raw_set(const K& key, const V& value, lua_State* L) const noexcept {
+        void raw_set(const K& key, const V& value, lua_State* L = clg::state()) const noexcept {
             clg::stack_integrity_check c(L);
             push_value_to_stack(L);
             clg::push_to_lua(L, key);
@@ -327,12 +313,12 @@ namespace clg {
             lua_pop(L, 1);
         }
 
-        size_t size() const noexcept {
-            clg::stack_integrity_check c(lua());
-            push_value_to_stack();
-            lua_len(lua(), -1);
-            auto v = clg::get_from_lua<int>(lua());
-            lua_pop(lua(), 2);
+        size_t size(lua_State* L = clg::state()) const noexcept {
+            clg::stack_integrity_check c;
+            push_value_to_stack(L);
+            lua_len(L, -1);
+            auto v = clg::get_from_lua<int>(L);
+            lua_pop(L, 2);
             return v;
         }
 

@@ -124,6 +124,7 @@ namespace clg {
             inline static std::optional<clg::ref> methods;
 
             static int handler(lua_State* L) {
+                clg::impl::raii_state_updater u(L);
                 assert(func != nullptr && methods);
                 if (lua_isstring(L, 2) && !lua_isnumber(L, 2)) {
                     auto method_name = get_from_lua<std::string_view>(L, 2);
@@ -151,18 +152,21 @@ namespace clg {
         };
 
         static int gc(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
             if (lua_isuserdata(l, 1)) {
                 static_cast<clg::impl::ptr_helper*>(lua_touserdata(l, 1))->~ptr_helper();
             }
             return 0;
         }
         static int eq(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
             auto v1 = get_from_lua<std::shared_ptr<C>>(l, 1);
             auto v2 = get_from_lua<std::shared_ptr<C>>(l, 2);
             push_to_lua(l, v1 == v2);
             return 1;
         }
         static int concat(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
             auto v1 = any_to_string(l, 1);
             auto v2 = any_to_string(l, 2);
             v1 += v2;
@@ -170,6 +174,7 @@ namespace clg {
             return 1;
         }
         static int tostring(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
             auto v1 = get_from_lua<std::shared_ptr<C>>(l, 1);
             push_to_lua(l, toString(v1));
             return 1;

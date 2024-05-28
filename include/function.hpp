@@ -20,23 +20,13 @@ namespace clg {
 
 
     public:
-        function(lua_State* lua, ref ref) : mLua(lua), mRef(std::move(ref)) {
-            if (mRef == nullptr) {
-                return;
-            }
-            push_function_to_be_called();
-            assert((lua_isfunction(mLua, -1)));
-            lua_pop(lua, 1);
-        }
-        function(ref ref) : mLua(ref.lua()), mRef(std::move(ref)) {
-        }
+        function(clg::ref name) : mRef(std::move(name)) {}
 
         function() = default;
-        function(function&& rhs) noexcept: mLua(rhs.mLua), mRef(std::move(rhs.mRef)) {}
-        function(const function& rhs): mLua(rhs.mLua), mRef(rhs.mRef) {}
+        function(function&& rhs) noexcept: mRef(std::move(rhs.mRef)) {}
+        function(const function& rhs): mRef(rhs.mRef) {}
 
         function& operator=(function&& rhs) noexcept {
-            mLua = rhs.mLua;
             mRef = std::move(rhs.mRef);
             return *this;
         }
@@ -48,9 +38,10 @@ namespace clg {
         template<typename... Args>
         void operator()(Args&& ... args) const {
             if (mRef == nullptr) return;
+            const auto L = clg::state();
             push_function_to_be_called();
-            if (!lua_isfunction(mLua, -1)) {
-                lua_pop(mLua, 1);
+            if (!lua_isfunction(L, -1)) {
+                lua_pop(L, 1);
                 return;
             }
             push(std::forward<Args>(args)...);
@@ -59,34 +50,34 @@ namespace clg {
 
         template<typename Return, typename... Args>
         Return call(Args&& ... args) const {
-            lua_settop(mLua, 0);
-            stack_integrity_fix stack(mLua);
+            const auto L = clg::state();
+            lua_settop(L, 0);
+            stack_integrity_fix stack(L);
             push_function_to_be_called();
 
             push(std::forward<Args>(args)...);
 
             if constexpr (std::is_same_v < Return, clg::dynamic_result >) {
                 do_call(sizeof...(args), LUA_MULTRET);
-                return pop_from_lua<Return>(mLua);
+                return pop_from_lua<Return>(L);
             } else if constexpr (std::is_same_v < Return, void >) {
                 do_call(sizeof...(args), 0);
             } else {
                 do_call(sizeof...(args), 1);
-                if (lua_gettop(mLua) != 1) {
+                if (lua_gettop(L) != 1) {
                     throw clg::clg_exception(std::string("a function is expected to return ") + typeid(Return).name() + "; nothing returned");
                 }
-                return pop_from_lua<Return>(mLua);
+                return pop_from_lua<Return>(L);
             }
         }
 
-        lua_State* mLua;
         clg::ref mRef;
 
-        function(clg::ref name, lua_State* lua) : mRef(std::move(name)), mLua(lua) {}
 
         template<typename Arg, typename... Args>
         void push(Arg&& arg, Args&& ... args) const {
-            push_to_lua(mLua, std::forward<Arg>(arg));
+            const auto L = clg::state();
+            push_to_lua(L, std::forward<Arg>(arg));
 
             push(std::forward<Args>(args)...);
         }
@@ -102,20 +93,21 @@ namespace clg {
         }
 
         void do_call(unsigned args, int results) const {
+            const auto L = clg::state();
             // insert error handler before args
-            int argsDelta = lua_gettop(mLua) - args;
-            lua_pushcfunction(mLua, error_handler);
-            lua_insert(mLua, argsDelta);
+            int argsDelta = lua_gettop(L) - args;
+            lua_pushcfunction(L, error_handler);
+            lua_insert(L, argsDelta);
 
 
-            auto status = pcall_callback() ? pcall_callback()(mLua, args, results, argsDelta)
-                                           : lua_pcall(mLua, args, results, argsDelta);
+            auto status = pcall_callback() ? pcall_callback()(L, args, results, argsDelta)
+                                           : lua_pcall(L, args, results, argsDelta);
 
             // remove inserted error handler
-            lua_remove(mLua, argsDelta);
+            lua_remove(L, argsDelta);
 
             if (status) {
-                lua_settop(mLua, 0);
+                lua_settop(L, 0);
                 throw lua_exception("failed to call " + mRef.debug_str());
             }
         }
@@ -138,6 +130,7 @@ namespace clg {
 
     private:
         static int error_handler(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
             if (error_callback()) {
                 error_callback()();
             }
@@ -152,11 +145,10 @@ namespace clg {
             if (r.is_error()) {
                 return r.error();
             }
-            auto actualLua = (*r).lua();
-            return clg::function{ actualLua, std::move(*r) };
+            return clg::function{ std::move(*r) };
         }
         static int to_lua(lua_State* l, const clg::ref& ref) {
-            ref.push_value_to_stack();
+            ref.push_value_to_stack(l);
             return 1;
         }
     };

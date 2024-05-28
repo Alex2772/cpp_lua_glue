@@ -149,6 +149,7 @@ namespace clg {
         };
 
         static int handle_gc(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
             if (lua_istable(l, 1)) {
                 // TODO: if lua's data is empty, we don't need to store it somewhere
 
