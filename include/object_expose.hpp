@@ -152,7 +152,7 @@ namespace clg {
         }
 
         static void handle_virtual_func(clg::table_view table, std::string_view key, clg::ref value) {
-            clg::table_view(clg::table_view(table.metatable())["__index"].ref())[key] = value;
+            table.raw_set(key, value);
             const auto L = clg::state();
             if constexpr (use_lua_self) {
                 try {
