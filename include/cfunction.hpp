@@ -59,13 +59,16 @@ namespace clg {
                         size_t argsCount = lua_gettop(s);
 
                         if constexpr (!is_vararg) {
-                            if (argsCount != expectedArgCount) {
-                                if constexpr (passthroughSubstitutionError) {
+                            if constexpr (passthroughSubstitutionError) {
+                                if (argsCount != expectedArgCount) {
                                     return OVERLOADED_HELPER_SUBSTITUTION_FAILURE;
                                 }
-                                throw clg_exception("invalid argument count! expected "
-                                                            + std::to_string(sizeof...(Args))
-                                                            + ", actual " + std::to_string(argsCount));
+                            } else {
+                                if (argsCount < expectedArgCount) {
+                                    throw clg_exception("invalid argument count! expected "
+                                                                + std::to_string(sizeof...(Args))
+                                                                + ", actual " + std::to_string(argsCount));
+                                }
                             }
                         }
 
