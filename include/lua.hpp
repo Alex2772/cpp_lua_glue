@@ -39,7 +39,7 @@ namespace clg {
          * @brief Storage of lua_State*.
          * @note Do not use this directly, it's not raii safe. use raii_state_updater instead.
          */
-        lua_State*& state() noexcept {
+        inline lua_State*& state() noexcept {
             static lua_State* state = nullptr;
             return state;
         }
@@ -61,7 +61,7 @@ namespace clg {
      * @brief Returns the latest lua_State which was passed to C++ honoring the coroutine lua_State (if any). Used by
      * clg::ref's destructor.
      */
-    lua_State* state() noexcept {
+    inline lua_State* state() noexcept {
         auto s = impl::state();
         assert(s != nullptr); // state is not set (callers of lua::state() are not expecting null)
         return s;

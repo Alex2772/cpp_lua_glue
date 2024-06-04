@@ -1,11 +1,16 @@
 #pragma once
 
+<<<<<<< HEAD
 #include <cstring>
 #include "lauxlib.h"
 #include "lua.h"
 #include "lua.hpp"
 #include "ref.hpp"
 #include "shared_ptr_helper.hpp"
+=======
+#include "lua.hpp"
+#include "weak_ref.hpp"
+>>>>>>> main
 #include "table.hpp"
 #include "weak_ref.hpp"
 
@@ -119,8 +124,40 @@ namespace clg {
             }
         }
 
-        static void handle_virtual_func(clg::table_view table, std::string_view key, clg::ref value, lua_State* L) {
-            table.raw_set(key, value, L);
+        static void push_weak_ptr_userdata(lua_State* l, std::weak_ptr<T> v) {
+            clg::stack_integrity_check c(l, 1);
+            auto classname = clg::class_name<T>();
+            auto t = reinterpret_cast<weak_ptr_helper*>(lua_newuserdata(l, sizeof(weak_ptr_helper)));
+            new(t) weak_ptr_helper(std::move(v));
+
+#if LUA_VERSION_NUM != 501
+            auto r = lua_getglobal(l, classname.c_str());
+#else
+            lua_getglobal(l, classname.c_str());
+            auto r = lua_type(l, -1);
+#endif
+            if (r != LUA_TNIL)
+            {
+                if (lua_getmetatable(l, -1)) {
+                    lua_setmetatable(l, -3);
+                }
+                lua_pop(l, 1);
+            }
+        }
+
+        static void push_strong_ref_holder_object(lua_State* l, std::shared_ptr<T> v, clg::ref dataHolderRef) {
+            push_shared_ptr_userdata(l, std::move(v));
+            clg::push_to_lua(l, clg::table{{"clg_strongref", clg::ref::from_stack(l)}});
+            clg::push_to_lua(l, clg::table{
+                { "__index", dataHolderRef },
+                { "__newindex", std::move(dataHolderRef) },
+            });
+            lua_setmetatable(l, -2);
+        }
+
+        static void handle_virtual_func(clg::table_view table, std::string_view key, clg::ref value) {
+            clg::table_view(clg::table_view(table.metatable())["__index"].ref())[key] = value;
+            const auto L = clg::state();
             if constexpr (use_lua_self) {
                 try {
                     clg::stack_integrity_check check(L);
