@@ -11,6 +11,7 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace clg {
     using table_array = std::vector<ref>;

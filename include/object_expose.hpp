@@ -1,16 +1,12 @@
 #pragma once
 
-<<<<<<< HEAD
 #include <cstring>
 #include "lauxlib.h"
 #include "lua.h"
 #include "lua.hpp"
 #include "ref.hpp"
 #include "shared_ptr_helper.hpp"
-=======
-#include "lua.hpp"
 #include "weak_ref.hpp"
->>>>>>> main
 #include "table.hpp"
 #include "weak_ref.hpp"
 
