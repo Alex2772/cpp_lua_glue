@@ -15,6 +15,7 @@ namespace clg {
     namespace detail {
 
         inline void clean_temp_table(lua_State* l) {
+            return;
             clg::stack_integrity_check c(l);
             lua_pushnil(l);
             lua_setglobal(l, "__clg_gc_block");

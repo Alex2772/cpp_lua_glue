@@ -55,7 +55,7 @@ namespace clg {
 
     private:
         clg::weak_ref mLuaRepresentation;
-        // lua_State* mOriginLuaState = nullptr; // just to check coroutine stuff
+         lua_State* mOriginLuaState = nullptr; // just to check coroutine stuff
 
     };
     inline void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value) {
@@ -181,25 +181,7 @@ namespace clg {
             }
         };
 
-        static int handle_gc(lua_State* l) {
-            clg::impl::raii_state_updater u(l);
-            if (lua_istable(l, 1)) {
-                // TODO: if lua's data is empty, we don't need to store it somewhere
-
-                luaL_getmetafield(l, 1, "__index");
-                auto& helper = *static_cast<shared_ptr_helper*>(lua_touserdata(l, -1));
-                lua_pop(l, 1);
-                if (helper.ptr.use_count() == 1) {
-                    helper.~shared_ptr_helper();
-                    return 0;
-                }
-
-                // renew the weak reference
-                auto sharedPtr = (*helper.as<T>());
-                auto strongRefToRepr = clg::ref::from_stack(l);
-                assert(!strongRefToRepr.isNull());
-                sharedPtr->mLuaRepresentation.emplace(strongRefToRepr, l);
-
+        static void push_ref_to_gc_block_storage(lua_State* l, const clg::ref& ref) {
                 // block lua from destroying the representation on this gc iteration
                 lua_getglobal(l, "__clg_gc_block");
                 if (lua_isnil(l, -1)) {
@@ -210,9 +192,35 @@ namespace clg {
                     lua_setglobal(l, "__clg_gc_block");
                 }
                 
-                strongRefToRepr.push_value_to_stack(l); // k
+                ref.push_value_to_stack(l); // k
                 lua_pushinteger(l, 0); // v
                 lua_settable(l, -3);
+        }
+
+
+        static int handle_gc(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
+            if (lua_istable(l, 1)) {
+                // TODO: if lua's data is empty, we don't need to store it somewhere
+
+                luaL_getmetafield(l, 1, "__index");
+                auto& helper = *static_cast<shared_ptr_helper*>(lua_touserdata(l, -1));
+                lua_pop(l, 1);
+                printf("handle_gc\n");
+                if (helper.ptr.use_count() == 1) {
+                    printf("~shared_ptr_helper\n");
+                    helper.~shared_ptr_helper();
+                    return 0;
+                }
+
+                // renew the weak reference
+                auto sharedPtr = (*helper.as<T>());
+                auto strongRefToRepr = clg::ref::from_stack(l);
+                assert(!strongRefToRepr.isNull());
+                sharedPtr->mLuaRepresentation.emplace(strongRefToRepr, l);
+
+                push_ref_to_gc_block_storage(l, strongRefToRepr);
+
                 return 0;
             }
             return 0;
@@ -231,11 +239,11 @@ namespace clg {
                     luaRepresentation.push_value_to_stack(l);
                     return 1;
                 }
-                // if (v->mOriginLuaState != nullptr) {
-                //     assert(v->mOriginLuaState == l);
-                // } else {
-                //     v->mOriginLuaState = l;
-                // }
+                if (v->mOriginLuaState != nullptr) {
+                    printf("mOriginLuaState != nullptr\n");
+                } else {
+                    v->mOriginLuaState = l;
+                }
 
                 // the object has no active representation.
                 push_shared_ptr_userdata(l, v);
@@ -249,6 +257,10 @@ namespace clg {
                         {"__index", sharedPtr},
                 });
                 v->mLuaRepresentation = luaRepresentation;
+
+                // sometimes lua destroys our object too early, so place it in temp storage
+                push_ref_to_gc_block_storage(l, luaRepresentation);
+
                 luaRepresentation.push_value_to_stack(l);
                 return 1;
             }
