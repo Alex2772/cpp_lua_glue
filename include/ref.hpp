@@ -304,7 +304,7 @@ namespace clg {
         template<typename K, typename V>
         void raw_set(const K& key, const V& value, lua_State* L = clg::state()) const noexcept {
             clg::stack_integrity_check c(L);
-            push_value_to_stack();
+            push_value_to_stack(L);
             clg::push_to_lua(L, key);
             clg::push_to_lua(L, value);
             lua_rawset(L, -3);

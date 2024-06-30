@@ -1,13 +1,22 @@
 #pragma once
 
+#include <optional>
 #include "lua.hpp"
 #include "weak_ref.hpp"
 #include "table.hpp"
+
+#define CLG_OBJECT_COUNTER 1
 
 namespace clg {
     class lua_self;
     namespace impl {
         inline void invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
+    }
+
+    [[nodiscard]]
+    inline std::map<std::string /* class name */, uint64_t /* counter */>& object_counters() {
+        static std::map<std::string /* class name */, uint64_t /* counter */> t;
+        return t;
     }
 
     /**
@@ -36,6 +45,7 @@ namespace clg {
             return static_cast<const table_view&>(mWeakPtrAndDataHolder); // avoid copy
         }
 
+        virtual ~lua_self() = default;
 
     protected:
 
@@ -51,6 +61,20 @@ namespace clg {
         clg::ref      mWeakPtrAndDataHolder;
         clg::weak_ref mSharedPtrHolder;
 
+#if CLG_OBJECT_COUNTER
+        struct ObjectCounter {
+            ObjectCounter(lua_self* s): name(typeid(*s).name()) {
+                object_counters()[name] += 1;
+            }
+            ~ObjectCounter() {
+                object_counters()[name] -= 1;
+            }
+
+        private:
+            std::string name;
+        };
+        std::optional<ObjectCounter> mObjectCounter;
+#endif
     };
     inline void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value) {
         s.handle_lua_virtual_func_assignment(name, std::move(value));
@@ -60,6 +84,11 @@ namespace clg {
         return s.mWeakPtrAndDataHolder;
     }
     inline clg::weak_ref& lua_self_shared_ptr_holder(lua_self& s) {
+#if CLG_OBJECT_COUNTER
+        if (!s.mObjectCounter) {
+            s.mObjectCounter.emplace(&s);
+        }
+#endif
         return s.mSharedPtrHolder;
     }
 
