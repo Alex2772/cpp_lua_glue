@@ -1,8 +1,7 @@
 #pragma once
 
 #include <cstring>
-#include "lauxlib.h"
-#include "lua.h"
+#include <optional>
 #include "lua.hpp"
 #include "ref.hpp"
 #include "shared_ptr_helper.hpp"
@@ -10,10 +9,18 @@
 #include "table.hpp"
 #include "weak_ref.hpp"
 
+#define CLG_OBJECT_COUNTER 1
+
 namespace clg {
     class lua_self;
     namespace impl {
         inline void invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
+    }
+
+    [[nodiscard]]
+    inline std::map<std::string /* class name */, uint64_t /* counter */>& object_counters() {
+        static std::map<std::string /* class name */, uint64_t /* counter */> t;
+        return t;
     }
 
     /**
@@ -44,10 +51,16 @@ namespace clg {
             return luaSelf();
         }
 
+        virtual ~lua_self() = default;
 
     protected:
 
         clg::ref luaSelf() const noexcept {
+#if CLG_OBJECT_COUNTER
+        if (!mObjectCounter) {
+            mObjectCounter.emplace(const_cast<clg::lua_self*>(this));
+        }
+#endif
             return mLuaRepresentation.lock();
         }
 
@@ -57,6 +70,20 @@ namespace clg {
         clg::weak_ref mLuaRepresentation;
         // lua_State* mOriginLuaState = nullptr; // just to check coroutine stuff
 
+#if CLG_OBJECT_COUNTER
+        struct ObjectCounter {
+            ObjectCounter(lua_self* s): name(typeid(*s).name()) {
+                object_counters()[name] += 1;
+            }
+            ~ObjectCounter() {
+                object_counters()[name] -= 1;
+            }
+
+        private:
+            std::string name;
+        };
+        mutable std::optional<ObjectCounter> mObjectCounter;
+#endif
     };
     inline void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value) {
         s.handle_lua_virtual_func_assignment(name, std::move(value));
