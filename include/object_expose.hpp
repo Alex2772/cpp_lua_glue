@@ -274,6 +274,7 @@ namespace clg {
                         {"__newindex", clg::ref::from_cpp(l, clg::cfunction<handle_virtual_func>("<handle virtual proc setter>"))},
                         {"__gc", clg::ref::from_cpp(l, lua_CFunction(handle_gc)) },
                         {"__index", sharedPtr},
+                        {"__clg_not_a_table_array", clg::ref::from_cpp(l, true)},
                 });
                 v->mLuaRepresentation = luaRepresentation;
                 luaRepresentation.push_value_to_stack(l);

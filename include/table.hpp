@@ -126,6 +126,11 @@ namespace clg {
                 return converter_error{"not a table"};
             }
 
+            if (luaL_getmetafield(l, n, "__clg_not_a_table_array") != 0) {
+                lua_pop(l, 1);
+                return converter_error{"__clg_not_a_table_array"};
+            }
+
             Container result;
             if (n < 0) {
                 n = lua_gettop(l) + n + 1;
