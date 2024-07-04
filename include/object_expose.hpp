@@ -9,7 +9,6 @@
 #include "table.hpp"
 #include "weak_ref.hpp"
 
-#define CLG_OBJECT_COUNTER 1
 
 namespace clg {
     class lua_self;
