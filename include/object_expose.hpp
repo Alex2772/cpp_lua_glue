@@ -59,6 +59,7 @@ namespace clg {
 
     private:
         clg::weak_ref mLuaRepresentation;
+        shared_ptr_helper* mHelper;
         // lua_State* mOriginLuaState = nullptr; // just to check coroutine stuff
 
 #if CLG_OBJECT_COUNTER
@@ -121,6 +122,10 @@ namespace clg {
             clg::stack_integrity_check c(l, 1);
             auto classname = clg::class_name<T>();
             auto t = reinterpret_cast<shared_ptr_helper*>(lua_newuserdata(l, sizeof(shared_ptr_helper)));
+            if constexpr (use_lua_self) {
+                assert(v->mHelper == nullptr);
+                v->mHelper = t;
+            }
             new(t) shared_ptr_helper(std::move(v));
 
 #if LUA_VERSION_NUM != 501
