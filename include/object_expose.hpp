@@ -4,11 +4,6 @@
 #include "lua.hpp"
 #include "weak_ref.hpp"
 #include "table.hpp"
-<<<<<<< HEAD
-=======
-#include "weak_ref.hpp"
-
->>>>>>> eb9d277 (u)
 
 #define CLG_OBJECT_COUNTER 1
 
