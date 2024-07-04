@@ -5,7 +5,6 @@
 #include "weak_ref.hpp"
 #include "table.hpp"
 
-#define CLG_OBJECT_COUNTER 1
 
 namespace clg {
     class lua_self;
@@ -14,10 +13,7 @@ namespace clg {
     }
 
     [[nodiscard]]
-    inline std::map<std::string /* class name */, uint64_t /* counter */>& object_counters() {
-        static std::map<std::string /* class name */, uint64_t /* counter */> t;
-        return t;
-    }
+    std::map<std::string /* class name */, uint64_t /* counter */>& object_counters();
 
     /**
      * @brief When extended from, allows to avoid extra overhead when passed to lua. Also allows lua code to use the
@@ -39,6 +35,8 @@ namespace clg {
      */
     class lua_self {
         friend void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
+        template<typename T, typename EnableIf>
+        friend struct converter_shared_ptr_impl;
     public:
 
         const table_view& luaDataHolder() const noexcept {
@@ -84,11 +82,6 @@ namespace clg {
         return s.mWeakPtrAndDataHolder;
     }
     inline clg::weak_ref& lua_self_shared_ptr_holder(lua_self& s) {
-#if CLG_OBJECT_COUNTER
-        if (!s.mObjectCounter) {
-            s.mObjectCounter.emplace(&s);
-        }
-#endif
         return s.mSharedPtrHolder;
     }
 
@@ -239,7 +232,11 @@ namespace clg {
                     lock.push_value_to_stack(l);
                     return 1;
                 }
-
+#if CLG_OBJECT_COUNTER
+                if (!v->mObjectCounter) {
+                    v->mObjectCounter.emplace(v.get());
+                }
+#endif
                 auto& dataHolder = lua_self_weak_ptr_and_data_holder(*v);
                 if (dataHolder.isNull()) {
                     // should compose strong ref holder and weak ref holder objects
@@ -271,6 +268,7 @@ namespace clg {
                 push_strong_ref_holder_object(l, std::move(v), dataHolder);
                 lua_pushvalue(l, -1);
                 weakRef = clg::weak_ref(clg::ref::from_stack(l));
+
                 return 1;
             }
             return 1;
