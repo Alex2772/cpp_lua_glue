@@ -54,6 +54,10 @@ namespace clg {
                     clg::check_thread();
                     clg::impl::raii_state_updater updater(s);
                     
+#if !CLG_MANUAL_CLEANUP
+                    clean_temp_table(s);
+#endif
+
                     const size_t expectedArgCount = (0 + ... + int(!std::is_same_v<lua_State*, Args>));
                     try {
                         size_t argsCount = lua_gettop(s);
