@@ -217,6 +217,9 @@ namespace clg {
                 auto& helper = *static_cast<shared_ptr_helper*>(lua_touserdata(l, -1));
                 lua_pop(l, 1);
                 if (helper.ptr.use_count() == 1) {
+                    // it looks like lua calls gc several times, even if we allowed to collect.
+                    // explicitly nullify the reference here
+                    helper.ptr = nullptr;
                     helper.~shared_ptr_helper();
                     return 0;
                 }
