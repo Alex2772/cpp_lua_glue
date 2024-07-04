@@ -17,10 +17,7 @@ namespace clg {
     }
 
     [[nodiscard]]
-    inline std::map<std::string /* class name */, uint64_t /* counter */>& object_counters() {
-        static std::map<std::string /* class name */, uint64_t /* counter */> t;
-        return t;
-    }
+    std::map<std::string /* class name */, uint64_t /* counter */>& object_counters();
 
     /**
      * @brief When extended from, allows to avoid extra overhead when passed to lua. Also allows lua code to use the
@@ -55,11 +52,6 @@ namespace clg {
     protected:
 
         clg::ref luaSelf() const noexcept {
-#if CLG_OBJECT_COUNTER
-        if (!mObjectCounter) {
-            mObjectCounter.emplace(const_cast<clg::lua_self*>(this));
-        }
-#endif
             return mLuaRepresentation.lock();
         }
 
@@ -280,6 +272,12 @@ namespace clg {
                 });
                 v->mLuaRepresentation = luaRepresentation;
                 luaRepresentation.push_value_to_stack(l);
+
+#if CLG_OBJECT_COUNTER
+                if (!v->mObjectCounter) {
+                    v->mObjectCounter.emplace(v.get());
+                }
+#endif
                 return 1;
             }
             return 1;
