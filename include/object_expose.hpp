@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <set>
 #include "lua.hpp"
 #include "weak_ref.hpp"
 #include "table.hpp"
@@ -13,7 +14,7 @@ namespace clg {
     }
 
     [[nodiscard]]
-    std::map<std::string /* class name */, uint64_t /* counter */>& object_counters();
+    std::set<lua_self*>& object_counters();
 
     /**
      * @brief When extended from, allows to avoid extra overhead when passed to lua. Also allows lua code to use the
@@ -61,15 +62,16 @@ namespace clg {
 
 #if CLG_OBJECT_COUNTER
         struct ObjectCounter {
-            ObjectCounter(lua_self* s): name(typeid(*s).name()) {
-                object_counters()[name] += 1;
+            ObjectCounter(lua_self* s): s(s) {
+                object_counters().insert(s);
+
             }
             ~ObjectCounter() {
-                object_counters()[name] -= 1;
+                object_counters().erase(s);
             }
 
         private:
-            std::string name;
+            lua_self* s;
         };
         std::optional<ObjectCounter> mObjectCounter;
 #endif
