@@ -52,7 +52,7 @@ namespace clg {
         {
             // in case of automatic memory management is not able to handle lua_self properly, we provide an
             // additional fallback method to manage memory manually.
-            mMethods.emplace_back("destroy", cfunction<clg_lua_self_destroy>("clg_destroy"));
+            mMethods.push_back(clg::impl::Method{"destroy", cfunction<clg_lua_self_destroy>("clg_destroy")});
         }
 
         lua_cfunctions mMethods;
