@@ -4,8 +4,12 @@
 
 #pragma once
 
+#include "cfunction.hpp"
 #include "clg.hpp"
+#include "object_expose.hpp"
+#include "shared_ptr_helper.hpp"
 #include "table.hpp"
+#include <type_traits>
 #include <vector>
 #include <cassert>
 #include <cstdio>
@@ -50,7 +54,11 @@ namespace clg {
         class_registrar(state_interface& clg):
             mClg(clg)
         {
-
+            if constexpr (std::is_base_of_v<clg::lua_self, C>) {
+                // in case of automatic memory management is not able to handle lua_self properly, we provide an
+                // additional fallback method to manage memory manually.
+                mMethods.emplace_back("destroy", cfunction<clg_lua_self_destroy>("clg_destroy"));
+            }
         }
 
         lua_cfunctions mMethods;
@@ -152,10 +160,26 @@ namespace clg {
         };
 
         static int gc(lua_State* l) {
+            return 0;
             clg::impl::raii_state_updater u(l);
             if (lua_isuserdata(l, 1)) {
-                static_cast<clg::impl::ptr_helper*>(lua_touserdata(l, 1))->~ptr_helper();
+                auto p = static_cast<clg::impl::ptr_helper*>(lua_touserdata(l, 1));
+                printf("[clg] default_gc %s %p\n", __PRETTY_FUNCTION__, p);
+                p->~ptr_helper();
             }
+            return 0;
+        }
+
+        static int clg_lua_self_destroy(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
+            if (!lua_istable(l, 1)) {
+                return 0;
+            }
+            luaL_getmetafield(l, 1, "__index");
+            auto& helper = *static_cast<clg::shared_ptr_helper*>(lua_touserdata(l, -1));
+            helper.ptr = nullptr;
+            lua_pop(l, 1);
+
             return 0;
         }
         static int eq(lua_State* l) {

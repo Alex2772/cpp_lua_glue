@@ -3,9 +3,12 @@
 #include <cstring>
 #include <optional>
 #include <set>
+#include "converter.hpp"
+#include "lua.h"
 #include "lua.hpp"
 #include "ref.hpp"
 #include "shared_ptr_helper.hpp"
+#include "util.hpp"
 #include "weak_ref.hpp"
 #include "table.hpp"
 #include "weak_ref.hpp"
@@ -60,7 +63,7 @@ namespace clg {
 
     private:
         clg::weak_ref mLuaRepresentation;
-        shared_ptr_helper* mHelper;
+        shared_ptr_helper* mHelper = nullptr;
         // lua_State* mOriginLuaState = nullptr; // just to check coroutine stuff
 
 #if CLG_OBJECT_COUNTER
@@ -139,6 +142,12 @@ namespace clg {
             if (r != LUA_TNIL)
             {
                 if (lua_getmetatable(l, -1)) {
+                    if constexpr (use_lua_self) {
+                        // in case of lua_self, it has custom __gc
+                        lua_pushstring(l, "__gc");
+                        lua_pushnil(l);
+                        lua_rawset(l, -3);
+                    }
                     lua_setmetatable(l, -3);
                 }
                 lua_pop(l, 1);
@@ -212,35 +221,51 @@ namespace clg {
                 // TODO: if lua's data is empty, we don't need to store it somewhere
 
                 luaL_getmetafield(l, 1, "__index");
-                auto& helper = *static_cast<shared_ptr_helper*>(lua_touserdata(l, -1));
+                auto helper = static_cast<shared_ptr_helper*>(lua_touserdata(l, -1));
+                printf("lua requests to destroy: helper = %p, helper->ptr = %p\n", helper, helper->ptr.get());
                 lua_pop(l, 1);
-                if (helper.ptr.use_count() == 1) {
-                    // it looks like lua calls gc several times, even if we allowed to collect.
-                    // explicitly nullify the reference here
-                    helper.ptr = nullptr;
-                    helper.~shared_ptr_helper();
+                if (!helper->ptr) {
+                    // closed by :destroy().
+                    helper->~shared_ptr_helper();
                     return 0;
                 }
+                if (helper->ptr.use_count() == 1) {
+                    // it looks like lua calls gc several times, even if we allowed to collect.
+                    // explicitly nullify the reference here
+                    printf("proceeding to destroy: helper = %p, helper->ptr = %p\n", helper, helper->ptr.get());
+                    helper->ptr = nullptr;
+                    helper->~shared_ptr_helper();
+                    return 0;
+                }
+                printf("destroy cancelled: helper = %p, helper->ptr = %p\n", helper, helper->ptr.get());
 
                 // renew the weak reference
-                auto sharedPtr = (*helper.as<T>());
-                auto strongRefToRepr = clg::ref::from_stack(l);
-                assert(!strongRefToRepr.isNull());
-                sharedPtr->mLuaRepresentation.emplace(strongRefToRepr, l);
+                auto sharedPtr = (*helper->as<T>());
+                {
+                    auto strongRefToRepr = clg::ref::from_stack(l);
+                    assert(!strongRefToRepr.isNull());
+                    sharedPtr->mLuaRepresentation.emplace(strongRefToRepr, l);
 
-                // block lua from destroying the representation on this gc iteration
-                lua_getglobal(l, "__clg_gc_block");
-                if (lua_isnil(l, -1)) {
-                    lua_pop(l, 1);
-                    lua_createtable(l, 0, 1024);
+                    // block lua from destroying the representation on this gc iteration
+                    lua_getglobal(l, "__clg_gc_block");
+                    if (lua_isnil(l, -1)) {
+                        lua_pop(l, 1);
+                        lua_createtable(l, 0, 1024);
 
-                    lua_pushvalue(l, -1);
-                    lua_setglobal(l, "__clg_gc_block");
+                        lua_pushvalue(l, -1);
+                        lua_setglobal(l, "__clg_gc_block");
+                    }
+                    
+                    strongRefToRepr.push_value_to_stack(l); // k
+
+                    // re set it's metatable explicitly; otherwise lua wouldn't call our's __gc for the second time.
+                    lua_getmetatable(l, -1);
+                    lua_setmetatable(l, -2);
+
+                    lua_pushinteger(l, 0); // v
+                    lua_settable(l, -3);
                 }
-                
-                strongRefToRepr.push_value_to_stack(l); // k
-                lua_pushinteger(l, 0); // v
-                lua_settable(l, -3);
+                assert(!sharedPtr->mLuaRepresentation.lock().isNull());
                 return 0;
             }
             return 0;
