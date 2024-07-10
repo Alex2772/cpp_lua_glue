@@ -50,7 +50,9 @@ namespace clg {
         class_registrar(state_interface& clg):
             mClg(clg)
         {
-
+            // in case of automatic memory management is not able to handle lua_self properly, we provide an
+            // additional fallback method to manage memory manually.
+            mMethods.emplace_back("destroy", cfunction<clg_lua_self_destroy>("clg_destroy"));
         }
 
         lua_cfunctions mMethods;
@@ -156,6 +158,22 @@ namespace clg {
             if (lua_isuserdata(l, 1)) {
                 static_cast<clg::impl::ptr_helper*>(lua_touserdata(l, 1))->~ptr_helper();
             }
+            return 0;
+        }
+
+        static int clg_lua_self_destroy(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
+            if (!lua_istable(l, -1)) {
+                return 0;
+            }
+            lua_getfield(l, -1, "clg_strongref");
+            if (!lua_isuserdata(l, -1)) {
+                lua_pop(l, 1);
+                return 0;
+            }
+
+            reinterpret_cast<clg::shared_ptr_helper*>(lua_touserdata(l, -1))->ptr = nullptr;
+
             return 0;
         }
         static int eq(lua_State* l) {
