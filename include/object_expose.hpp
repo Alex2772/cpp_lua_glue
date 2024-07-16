@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <set>
 #include "lua.hpp"
@@ -46,6 +47,15 @@ namespace clg {
 
         virtual ~lua_self() = default;
 
+
+        shared_ptr_helper* clg_helper() const {
+            return mHelper;
+        }
+
+        size_t clg_use_count() const {
+            return mUseCount.use_count();
+        }
+
     protected:
 
         clg::ref luaSelf() const noexcept {
@@ -59,6 +69,8 @@ namespace clg {
         friend clg::weak_ref& lua_self_shared_ptr_holder(lua_self& s);
         clg::ref      mWeakPtrAndDataHolder;
         clg::weak_ref mSharedPtrHolder;
+        shared_ptr_helper* mHelper = nullptr;
+        std::weak_ptr<void> mUseCount;
 
 #if CLG_OBJECT_COUNTER
         struct ObjectCounter {
@@ -124,7 +136,23 @@ namespace clg {
             clg::stack_integrity_check c(l, 1);
             auto classname = clg::class_name<T>();
             auto t = reinterpret_cast<shared_ptr_helper*>(lua_newuserdata(l, sizeof(shared_ptr_helper)));
+            if constexpr (use_lua_self) {
+                v->mUseCount = v;
+            }
+            auto ptr = v.get();
             new(t) shared_ptr_helper(std::move(v));
+            if constexpr (use_lua_self) {
+                t->onDestroy = [ptr, helper = t] {
+                    if (helper == ptr->mHelper) {
+                        ptr->mHelper = nullptr;
+                    }
+                };
+                if (ptr->mHelper != nullptr) {
+                    // invalidate the old helper so it won't lead to memleak.
+                    ptr->mHelper->ptr = nullptr;
+                }
+                ptr->mHelper = t;
+            }
 
 #if LUA_VERSION_NUM != 501
             auto r = lua_getglobal(l, classname.c_str());

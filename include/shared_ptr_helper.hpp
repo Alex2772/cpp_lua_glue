@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <variant>
@@ -77,6 +78,7 @@ namespace clg {
     struct shared_ptr_helper: impl::ptr_helper {
         std::shared_ptr<void> ptr;
         const std::type_info& type;
+        std::function<void()> onDestroy;
 
 
         template<typename T>
@@ -85,10 +87,15 @@ namespace clg {
             type(typeid(T))
         {
         }
-        ~shared_ptr_helper() = default;
+        ~shared_ptr_helper() {
+            if (onDestroy) onDestroy();
+        }
 
         template<typename T>
         clg::converter_result<std::shared_ptr<T>> as() const {
+            if (ptr == nullptr) {
+                return clg::converter_error{":destroy()-ed cpp object"};
+            }
             if constexpr (std::is_base_of_v<allow_lua_inheritance, T>) {
                 auto inheritance = reinterpret_cast<const std::shared_ptr<allow_lua_inheritance>&>(ptr);
                 return std::dynamic_pointer_cast<T>(inheritance);
