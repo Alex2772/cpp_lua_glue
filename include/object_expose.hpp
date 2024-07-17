@@ -14,6 +14,13 @@ namespace clg {
         inline void invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
     }
 
+    namespace debug {
+        inline std::function<void(const clg::ref&)>& on_object_created() {
+            static std::function<void(const clg::ref&)> v;
+            return v;
+        };
+    }
+
     [[nodiscard]]
     std::set<lua_self*>& object_counters();
 
@@ -293,6 +300,7 @@ namespace clg {
                     lua_setmetatable(l, -2);
 
                     dataHolder = clg::ref::from_stack(l);
+                    if (auto& v = debug::on_object_created()) v(dataHolder);
                 }
 
                 push_strong_ref_holder_object(l, std::move(v), dataHolder);
