@@ -78,13 +78,15 @@ namespace clg {
     struct shared_ptr_helper: impl::ptr_helper {
         std::shared_ptr<void> ptr;
         const std::type_info& type;
+        std::weak_ptr<void> weakPtr;
         std::function<void()> onDestroy;
 
 
         template<typename T>
         shared_ptr_helper(std::shared_ptr<T> ptr):
             ptr(convert_to_void_p(std::move(ptr))),
-            type(typeid(T))
+            type(typeid(T)),
+            weakPtr(ptr)
         {
         }
         ~shared_ptr_helper() {
@@ -92,7 +94,10 @@ namespace clg {
         }
 
         template<typename T>
-        clg::converter_result<std::shared_ptr<T>> as() const {
+        clg::converter_result<std::shared_ptr<T>> as() {
+            if (ptr == nullptr) {
+                ptr = weakPtr.lock();
+            }
             if (ptr == nullptr) {
                 return clg::converter_error{":destroy()-ed cpp object"};
             }
