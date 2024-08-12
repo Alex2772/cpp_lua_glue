@@ -48,35 +48,56 @@ namespace clg {
         friend struct converter_shared_ptr_impl;
     public:
 
-        const table_view& luaDataHolder() const noexcept {
-            return static_cast<const table_view&>(mWeakPtrAndDataHolder); // avoid copy
+        table_view luaDataHolder() const noexcept {
+            if (!mDataHolder.isNull()) {
+                return mDataHolder;
+            }
+
+            auto userdata = mUserdataHolder.lock().as<userdata_view>();
+            assert(!userdata.isNull());
+            return userdata.uservalue();
         }
 
         virtual ~lua_self() = default;
-
-
-        shared_ptr_helper* clg_helper() const {
-            return mHelper;
-        }
 
         size_t clg_use_count() const {
             return mUseCount.use_count();
         }
 
+        void updateDataholder(clg::table_view t) noexcept {
+            mDataHolder = std::move(t);
+            assert(!mDataHolder.isNull());
+            assert(mDataHolder.as_converter_result<table>().is_ok()); // temporary
+        }
+
     protected:
 
         clg::ref luaSelf() const noexcept {
-            return mSharedPtrHolder.lock();
+            return mUserdataHolder.lock();
         }
 
         virtual void handle_lua_virtual_func_assignment(std::string_view name, clg::ref value) {}
 
     private:
-        friend clg::ref& lua_self_weak_ptr_and_data_holder(lua_self& s);
-        friend clg::weak_ref& lua_self_shared_ptr_holder(lua_self& s);
-        clg::ref      mWeakPtrAndDataHolder;
-        clg::weak_ref mSharedPtrHolder;
-        shared_ptr_helper* mHelper = nullptr;
+        /**
+         * @brief Lua table with some arbirtary data accessible from lua
+         * @note If there is at least one reference on the object's userdata in lua, this table is stored in uservalue
+         *       field of userdata (clg uses only 1 uservalue slot) and mDataHolder is nil, use luaDataHolder() method
+         *       to access it. (We need it to avoid cyclic links and help lua garbage collector to work properly)
+         *       If there is no userdata in lua (userdata has been collected), mDataHolder must be non-nil and contain
+         *       data holder table.
+         */
+        clg::table_view mDataHolder;
+        /**
+         * @brief Weak reference to lua userdata pushed to lua
+         */
+        clg::weak_ref mUserdataHolder;
+        /**
+         * @brief True if we need to initialized data holder.
+         * @note Data holder table will be created on the first time pushing to lua
+         */
+        bool mIsDataHolderInitialized = false;
+
         std::weak_ptr<void> mUseCount;
 
 #if CLG_OBJECT_COUNTER
@@ -99,14 +120,6 @@ namespace clg {
         s.handle_lua_virtual_func_assignment(name, std::move(value));
     }
 
-    inline clg::ref& lua_self_weak_ptr_and_data_holder(lua_self& s) {
-        return s.mWeakPtrAndDataHolder;
-    }
-    inline clg::weak_ref& lua_self_shared_ptr_holder(lua_self& s) {
-        return s.mSharedPtrHolder;
-    }
-
-
     /**
      * userdata
      */
@@ -119,196 +132,72 @@ namespace clg {
                 return std::shared_ptr<T>(nullptr);
             }
 
-            if constexpr(use_lua_self) {
-                if (lua_istable(l, n)) {
-                    lua_getfield(l, n, "clg_strongref");
-                    if (!lua_isuserdata(l, -1)) {
-                        lua_pop(l, 1);
-                        return clg::converter_error{"not a cpp object"};
-                    }
-                    auto p = reinterpret_cast<shared_ptr_helper*>(lua_touserdata(l, -1))->as<T>();
-                    lua_pop(l, 1);
-                    return p;
-                }
-                return std::shared_ptr<T>(nullptr);
-            } else {
-                if (lua_isuserdata(l, n)) {
-                    return reinterpret_cast<shared_ptr_helper*>(lua_touserdata(l, n))->as<T>();
-                }
-                return clg::converter_error{"not a userdata"};
+            if (lua_isuserdata(l, n)) {
+                return reinterpret_cast<shared_ptr_helper*>(lua_touserdata(l, n))->as<T>();
             }
+
+            return clg::converter_error{"not a userdata"};
         }
 
         static void push_shared_ptr_userdata(lua_State* l, std::shared_ptr<T> v) {
             clg::stack_integrity_check c(l, 1);
             auto classname = clg::class_name<T>();
-            auto t = reinterpret_cast<shared_ptr_helper*>(lua_newuserdata(l, sizeof(shared_ptr_helper)));
-            if constexpr (use_lua_self) {
-                v->mUseCount = v;
+            auto t = static_cast<shared_ptr_helper*>(lua_newuserdata(l, sizeof(shared_ptr_helper)));
+            if constexpr (std::is_polymorphic_v<T>) {
+                if (auto self = dynamic_cast<clg::lua_self*>(v.get())) {
+                    self->mUseCount = v;
+                    if (!self->mIsDataHolderInitialized) {
+                        lua_createtable(l, 0, 0);
+                        lua_setuservalue(l, -2);
+                        self->mIsDataHolderInitialized = true;
+                    }
+                    else {
+                        assert(!self->mDataHolder.isNull());
+                        self->mDataHolder.push_value_to_stack(l);
+                        lua_setuservalue(l, -2);
+                        self->mDataHolder = nullptr;
+                    }
+                }
             }
-            auto ptr = v.get();
+
             new(t) shared_ptr_helper(std::move(v));
-            if constexpr (use_lua_self) {
-                t->onDestroy = [ptr, helper = t] {
-                    if (helper == ptr->mHelper) {
-                        ptr->mHelper = nullptr;
-                    }
-                };
-                if (ptr->mHelper != nullptr) {
-                    // invalidate the old helper so it won't lead to memleak.
-                    ptr->mHelper->ptr = nullptr;
-                }
-                ptr->mHelper = t;
-            }
-
 #if LUA_VERSION_NUM != 501
             auto r = lua_getglobal(l, classname.c_str());
 #else
             lua_getglobal(l, classname.c_str());
             auto r = lua_type(l, -1);
 #endif
-            if (r != LUA_TNIL)
-            {
+            if (r != LUA_TNIL) {
                 if (lua_getmetatable(l, -1)) {
                     lua_setmetatable(l, -3);
                 }
                 lua_pop(l, 1);
             }
         }
-
-        static void push_weak_ptr_userdata(lua_State* l, std::weak_ptr<T> v) {
-            clg::stack_integrity_check c(l, 1);
-            auto classname = clg::class_name<T>();
-            auto t = reinterpret_cast<weak_ptr_helper*>(lua_newuserdata(l, sizeof(weak_ptr_helper)));
-            new(t) weak_ptr_helper(std::move(v));
-
-#if LUA_VERSION_NUM != 501
-            auto r = lua_getglobal(l, classname.c_str());
-#else
-            lua_getglobal(l, classname.c_str());
-            auto r = lua_type(l, -1);
-#endif
-            if (r != LUA_TNIL)
-            {
-                if (lua_getmetatable(l, -1)) {
-                    lua_setmetatable(l, -3);
-                }
-                lua_pop(l, 1);
-            }
-        }
-
-        static void push_strong_ref_holder_object(lua_State* l, std::shared_ptr<T> v, clg::ref dataHolderRef) {
-            push_shared_ptr_userdata(l, std::move(v));
-            clg::push_to_lua(l, clg::table{{"clg_strongref", clg::ref::from_stack(l)}});
-            clg::push_to_lua(l, clg::table{
-                { "__index", dataHolderRef },
-                { "__newindex", std::move(dataHolderRef) },
-            });
-            lua_setmetatable(l, -2);
-        }
-
-        static void handle_virtual_func(clg::table_view table, std::string_view key, clg::ref value) {
-            clg::table_view(clg::table_view(table.metatable())["__index"].ref())[key] = value;
-            const auto L = clg::state();
-            if constexpr (use_lua_self) {
-                try {
-                    clg::stack_integrity_check check(L);
-                    if (!value.isFunction()) {
-                        return;
-                    }
-
-                    clg::table_view meta = table.metatable();
-                    if (meta.isNull()) {
-                        return;
-                    }
-
-                    auto index1 = meta["__index"].ref();
-                    if (index1.isNull()) {
-                        return;
-                    }
-
-                    clg::table_view index1Metatable = index1.metatable();
-                    if (index1Metatable.isNull()) {
-                        return;
-                    }
-
-                    auto index2 = index1Metatable["__index"].ref();
-                    if (index2.isNull()) {
-                        return;
-                    }
-                    index2.push_value_to_stack();
-
-                    if (!lua_isuserdata(L, -1)) {
-                        lua_pop(L, 1);
-                        return;
-                    }
-
-                    auto r = reinterpret_cast<shared_ptr_helper*>(lua_touserdata(L, -1))->as<T>();
-                    if (r.is_error()) {
-                        throw std::runtime_error("failed to convert from shared_ptr_helper to as<T>");
-                    }
-                    auto& object = *r;
-
-                    impl::invoke_handle_lua_virtual_func_assignment(*(object.get()), key, std::move(value));
-                    lua_pop(L, 1);
-                } catch (...) {}
-            }
-        };
 
         static int to_lua(lua_State* l, std::shared_ptr<T> v) {
+            stack_integrity_check check(l, 1);
             if (v == nullptr) {
                 lua_pushnil(l);
                 return 1;
             }
 
-            if constexpr(!use_lua_self) {
-                push_shared_ptr_userdata(l, std::move(v));
-            } else {
-                auto& weakRef = lua_self_shared_ptr_holder(*v);
-                if (auto lock = weakRef.lock()) {
-                    lock.push_value_to_stack(l);
-                    return 1;
-                }
-#if CLG_OBJECT_COUNTER
-                if (!v->mObjectCounter) {
-                    v->mObjectCounter.emplace(v.get());
-                }
-#endif
-                auto& dataHolder = lua_self_weak_ptr_and_data_holder(*v);
-                if (dataHolder.isNull()) {
-                    // should compose strong ref holder and weak ref holder objects
-                    // weak ref and data holder object
-                    lua_createtable(l, 0, 0);
-                    push_weak_ptr_userdata(l, v);
-
-                    if constexpr (use_lua_self) {
-                        auto r = clg::ref::from_cpp(l, clg::table{});
-                        r.set_metatable(clg::table{
-                               { "__index", clg::ref::from_stack(l) },
-                        });
-
-
-                        clg::push_to_lua(l, clg::table{
-                                {"__index",    std::move(r)},
-                                {"__newindex", clg::ref::from_cpp(l, clg::cfunction<handle_virtual_func>("<handle virtual proc setter>"))},
-                        });
-                    } else {
-                        clg::push_to_lua(l, clg::table{
-                                {"__index",    clg::ref::from_stack(l)},
-                        });
+            if constexpr (std::is_polymorphic_v<T>) {
+                if (auto self = dynamic_cast<clg::lua_self*>(v.get())) {
+                    auto& weakRef = self->mUserdataHolder;
+                    if (auto lock = weakRef.lock()) {
+                        lock.push_value_to_stack(l);
+                        return 1;
                     }
-                    lua_setmetatable(l, -2);
-
-                    dataHolder = clg::ref::from_stack(l);
-                    if (auto& v = debug::on_object_created()) v(dataHolder);
+#if CLG_OBJECT_COUNTER
+                    if (!self->mObjectCounter) {
+                        self->mObjectCounter.emplace(self);
+                    }
+#endif
                 }
-
-                push_strong_ref_holder_object(l, std::move(v), dataHolder);
-                lua_pushvalue(l, -1);
-                weakRef = clg::weak_ref(clg::ref::from_stack(l));
-
-                return 1;
             }
+
+            push_shared_ptr_userdata(l, std::move(v));
             return 1;
         }
     };

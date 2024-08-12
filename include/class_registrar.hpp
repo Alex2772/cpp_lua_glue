@@ -6,6 +6,7 @@
 
 #include "clg.hpp"
 #include "table.hpp"
+#include "object_expose.hpp"
 #include <vector>
 #include <cassert>
 #include <cstdio>
@@ -121,31 +122,6 @@ namespace clg {
             using wrapper_function_helper = wrapper_function_helper_t<typename class_info::args>;
         };
 
-        struct brackets_operator_helper {
-            inline static lua_CFunction func = nullptr;
-            inline static std::optional<clg::ref> methods;
-
-            static int handler(lua_State* L) {
-                clg::impl::raii_state_updater u(L);
-                assert(func != nullptr && methods);
-                if (lua_isstring(L, 2) && !lua_isnumber(L, 2)) {
-                    auto method_name = get_from_lua<std::string_view>(L, 2);
-                    push_to_lua(L, methods->as<table>()[method_name]);
-                    if (!lua_isnil(L, -1)) {
-                        return 1;
-                    }
-
-                    lua_pop(L, 1);
-                }
-
-                lua_pushcfunction(L, func);
-                lua_pushvalue(L, 1);
-                lua_pushvalue(L, 2);
-                lua_call(L, 2, 1);
-                return 1;
-            };
-        };
-
         template<typename... Args>
         struct constructor_helper {
             static std::shared_ptr<C> construct(void* self, Args... args) {
@@ -153,27 +129,24 @@ namespace clg {
             }
         };
 
+        struct methods_helper {
+            inline static clg::table_view methods;
+        };
+
         static int gc(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             if (lua_isuserdata(l, 1)) {
-                static_cast<clg::impl::ptr_helper*>(lua_touserdata(l, 1))->~ptr_helper();
+                auto helper = static_cast<shared_ptr_helper*>(lua_touserdata(l, 1));
+                if constexpr (std::is_base_of_v<lua_self, C>) {
+                    lua_getuservalue(l, 1);
+                    static_cast<lua_self*>(helper->ptr.get())->updateDataholder(clg::ref::from_stack(l));
+                }
+                helper->~shared_ptr_helper();
             }
             return 0;
         }
 
         static int clg_lua_self_destroy(lua_State* l) {
-            clg::impl::raii_state_updater u(l);
-            if (!lua_istable(l, -1)) {
-                return 0;
-            }
-            lua_getfield(l, -1, "clg_strongref");
-            if (!lua_isuserdata(l, -1)) {
-                lua_pop(l, 1);
-                return 0;
-            }
-
-            reinterpret_cast<clg::shared_ptr_helper*>(lua_touserdata(l, -1))->ptr = nullptr;
-
             return 0;
         }
         static int eq(lua_State* l) {
@@ -210,6 +183,49 @@ namespace clg {
             char buf[64];
             std::sprintf(buf, "%s<%p>", class_name<C>().c_str(), v.get());
             return buf;
+        }
+
+        static int lua_self_index(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
+            assert(lua_isuserdata(l, 1));
+            if (lua_isstring(l, 2)) {   // is key is not a string, we have no need to index method table
+                // trying to index method table
+                methods_helper::methods.push_value_to_stack(l); // push table with registered methods
+                lua_pushvalue(l, 2);                            // push key to stack
+                if (lua_rawget(l, -2) != LUA_TNIL) {
+                    lua_remove(l, -2); // remove table from stack
+                    return 1;
+                }
+                // value has not been found, we need to index uservalue table
+                lua_pop(l, 2); // pop table and nil from stack
+            }
+
+            lua_getuservalue(l, 1); // clg stores table with arbitrary data in uservalue, trying to index it
+            lua_pushvalue(l, 2);    // push key to stack
+            lua_rawget(l, -2);      // trying to get value (pops value from stack)
+            lua_remove(l, -2);      // remove table from stack
+            return 1;
+        }
+
+        static int lua_self_newindex(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
+            assert(lua_isuserdata(l, 1));
+            auto userdata = static_cast<shared_ptr_helper*>(lua_touserdata(l, 1));
+            auto ptr = static_cast<lua_self*>(userdata->ptr.get());
+
+            // if we have ref to userdata in lua, we store data holder in uservalue slot, try to get it
+            if (lua_getuservalue(l, 1) != LUA_TTABLE) {
+                return luaL_error(l, "attempt to index clg userdata value without uservalue set (possibly not inherited from clg::lua_self)");
+            }
+            lua_pushvalue(l, 2);    // push key
+            lua_pushvalue(l, 3);    // push value
+            lua_rawset(l, -3);      // add value to data holder table
+            lua_pop(l, 1);          // pop data holder table
+            if (lua_isstring(l, 2) && lua_isfunction(l, 3)) {
+                lua_pushvalue(l, 3);
+                impl::invoke_handle_lua_virtual_func_assignment(*ptr, lua_tostring(l, 2), clg::ref::from_stack(l));
+            }
+            return 0;
         }
 
     public:
@@ -257,6 +273,8 @@ namespace clg {
                     { "__eq", eq },
                     { "__concat", concat },
                     { "__tostring", tostring },
+                    { "__index", lua_self_index },
+                    { "__newindex", lua_self_newindex}
             };
             metatableFunctions.reserve(metatableFunctions.size() + mMetaFunctions.size() + 1);
             for (const auto& v : mMetaFunctions) {
@@ -269,12 +287,12 @@ namespace clg {
 
             auto methods = impl::table_from_c_functions(mClg, mMethods);
 
-            if (brackets_operator_helper::func) {
-                metatable["__index"] = static_cast<lua_CFunction>(brackets_operator_helper::handler);
-                brackets_operator_helper::methods = std::move(methods);
+            if constexpr (std::is_base_of_v<lua_self, C>) {
+                methods_helper::methods = std::move(methods);
             }
             else {
-                metatable["__index"] = methods;
+                // in such case we have no data holder, so index metamethod is just a table of methods
+                metatable["__index"] = std::move(methods);
             }
 
             clazz.set_metatable(metatable);
@@ -397,14 +415,5 @@ namespace clg {
             });
             return *this;
         }
-
-        template<auto m>
-        class_registrar<C>& bracketsOperator() {
-            using wrapper_function_helper = typename method_helper<m>::wrapper_function_helper;
-            using my_instance = typename wrapper_function_helper::my_instance;
-            brackets_operator_helper::func = my_instance::call;
-            return *this;
-        }
-
     };
 }
