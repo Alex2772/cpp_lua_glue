@@ -76,7 +76,7 @@ namespace clg {
         using weak_ptr = std::weak_ptr<void>;
     public:
         template<typename T>
-        userdata_helper(std::shared_ptr<T> ptr) : mPtr(weak_ptr(convert_to_void_p(std::move(ptr)))), mType(typeid(T)) {
+        userdata_helper(std::shared_ptr<T> ptr) : mPtr(convert_to_void_p(std::move(ptr))), mType(typeid(T)) {
         }
 
         bool expired() {
