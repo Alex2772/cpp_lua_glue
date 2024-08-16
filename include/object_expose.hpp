@@ -64,9 +64,13 @@ namespace clg {
 
     protected:
 
-        clg::ref luaSelf() const noexcept {
+        clg::userdata_view luaSelf() const noexcept {
             if (!mInitialized) {
                 return {}; // userdata do not exists yet
+            }
+            if (!mStrongUserdata.isNull()) {
+                auto res = mWeakUserdata.lock();
+                return mStrongUserdata;
             }
             auto res = mWeakUserdata.lock();
             assert(("lua self userdata must exist after its initialization", !res.isNull()));
@@ -190,6 +194,7 @@ namespace clg {
                         assert(helper != nullptr);
                         auto b = helper->switch_to_shared();
                         assert(b);
+                        self->mWeakUserdata = std::move(self->mStrongUserdata);
                         self->mStrongUserdata = nullptr;
                         return 1;
                     }
