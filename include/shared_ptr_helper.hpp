@@ -81,14 +81,22 @@ namespace clg {
 
         bool expired() {
             if (auto weak = std::get_if<weak_ptr>(&mPtr)) {
-                return weak.expired();
+                return weak->expired();
             }
             return false;
         }
 
         template<typename T>
         clg::converter_result<std::shared_ptr<T>> as() {
-            auto ptr = get_shared();
+            auto ptr = std::visit([](const auto& v) -> shared_ptr {
+                using type = std::decay_t<decltype(v)>;
+                if constexpr (std::is_same_v<shared_ptr, type>) {
+                    return v;
+                }
+                else {
+                    return v.lock();
+                }
+            }, mPtr);
             if constexpr (std::is_base_of_v<allow_lua_inheritance, T>) {
                 auto inheritance = reinterpret_cast<const std::shared_ptr<allow_lua_inheritance>&>(ptr);
                 return std::dynamic_pointer_cast<T>(inheritance);

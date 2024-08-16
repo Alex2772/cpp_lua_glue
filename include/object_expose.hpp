@@ -12,9 +12,7 @@ namespace clg {
     class lua_self;
     namespace impl {
         inline void invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
-        inline void update_strong_userdata(clg::lua_self& self, clg::ref value) {
-            self.
-        }
+        inline void update_strong_userdata(clg::lua_self& self, clg::ref value);
     }
 
     namespace debug {
@@ -47,7 +45,7 @@ namespace clg {
      */
     class lua_self {
         friend void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
-        friend void update_strong_userdata(clg::lua_self& self, clg::ref value);
+        friend void impl::update_strong_userdata(clg::lua_self& self, clg::ref value);
         template<typename T, typename EnableIf>
         friend struct converter_shared_ptr_impl;
     public:
@@ -186,10 +184,13 @@ namespace clg {
                     }
 
                     if (!self->mStrongUserdata.isNull()) {
-                        // in this case userdata is unreachable in regular lua usage and stores only in lua registry
-                        auto b = self->switch_to_shared();
-                        assert(b);
+                        // in this case, at the moment userdata is unreachable in regular lua usage and stores only in lua registry
                         self->mStrongUserdata.push_value_to_stack(l);
+                        auto helper = static_cast<userdata_helper*>(lua_touserdata(l, -1));
+                        assert(helper != nullptr);
+                        auto b = helper->switch_to_shared();
+                        assert(b);
+                        self->mStrongUserdata = nullptr;
                         return 1;
                     }
 

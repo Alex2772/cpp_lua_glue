@@ -167,7 +167,7 @@ namespace clg {
             }
             else {
                 // just call destructor of helper
-                helper->~shared_ptr_helper();
+                helper->~userdata_helper();
             }
 
             return 0;
@@ -239,20 +239,20 @@ namespace clg {
         static int lua_self_newindex(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             assert(lua_isuserdata(l, 1));
-            auto userdata = static_cast<shared_ptr_helper*>(lua_touserdata(l, 1));
-            auto ptr = static_cast<lua_self*>(userdata->ptr.get());
+            auto userdata = static_cast<userdata_helper*>(lua_touserdata(l, 1));
 
             // if we have ref to userdata in lua, we store data holder in uservalue slot, try to get it
             if (lua_getuservalue(l, 1) != LUA_TTABLE) {
                 return luaL_error(l, "attempt to index clg userdata value without uservalue set (possibly not inherited from clg::lua_self)");
             }
+            auto self = userdata->asLuaSelf();
             lua_pushvalue(l, 2);    // push key
             lua_pushvalue(l, 3);    // push value
             lua_rawset(l, -3);      // add value to data holder table
             lua_pop(l, 1);          // pop data holder table
             if (lua_isstring(l, 2) && lua_isfunction(l, 3)) {
                 lua_pushvalue(l, 3);
-                impl::invoke_handle_lua_virtual_func_assignment(*ptr, lua_tostring(l, 2), clg::ref::from_stack(l));
+                impl::invoke_handle_lua_virtual_func_assignment(*self, lua_tostring(l, 2), clg::ref::from_stack(l));
             }
             return 0;
         }
