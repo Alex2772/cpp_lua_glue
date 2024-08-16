@@ -221,15 +221,8 @@ namespace clg {
         static int index(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             assert(lua_isuserdata(l, 1));
-            printf("INDEX\n");
-            print_stack(l);
             if (lua_isstring(l, 2)) {   // is key is not a string, we have no need to index method table
                 // trying to index method table
-
-                if (std::string_view(lua_tostring(l, 2)) == "setValue") {
-                    printf("SUKA\n");
-                    fflush(stdout);
-                }
 
                 methods_helper::methods.push_value_to_stack(l); // push table with registered methods
                 lua_pushvalue(l, 2);                            // push key to stack
@@ -241,7 +234,9 @@ namespace clg {
                 lua_pop(l, 2); // pop table and nil from stack
             }
 
-            lua_getuservalue(l, 1); // clg stores table with arbitrary data in uservalue, trying to index it
+            if (lua_getuservalue(l, 1) == LUA_TNIL) {
+                return 1; // just return nil
+            }
             lua_pushvalue(l, 2);    // push key to stack
             lua_rawget(l, -2);      // trying to get value (pops value from stack)
             lua_remove(l, -2);      // remove table from stack
@@ -327,7 +322,8 @@ namespace clg {
             clg::table_view metatable = impl::table_from_c_functions(mClg, metatableFunctions);
 
             auto methods = impl::table_from_c_functions(mClg, mMethods);
-
+            methods_helper::methods = std::move(methods);
+            /*
             if constexpr (std::is_base_of_v<lua_self, C>) {
                 methods_helper::methods = std::move(methods);
             }
@@ -335,6 +331,7 @@ namespace clg {
                 // in such case we have no data holder, so index metamethod is just a table of methods
                 metatable["__index"] = std::move(methods);
             }
+             */
 
             clazz.set_metatable(metatable);
 
