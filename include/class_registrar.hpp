@@ -221,8 +221,16 @@ namespace clg {
         static int index(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             assert(lua_isuserdata(l, 1));
+            printf("INDEX\n");
+            print_stack(l);
             if (lua_isstring(l, 2)) {   // is key is not a string, we have no need to index method table
                 // trying to index method table
+
+                if (std::string_view(lua_tostring(l, 2)) == "setValue") {
+                    printf("SUKA\n");
+                    fflush(stdout);
+                }
+
                 methods_helper::methods.push_value_to_stack(l); // push table with registered methods
                 lua_pushvalue(l, 2);                            // push key to stack
                 if (lua_rawget(l, -2) != LUA_TNIL) {
