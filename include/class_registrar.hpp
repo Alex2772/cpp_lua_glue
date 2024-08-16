@@ -135,13 +135,17 @@ namespace clg {
 
         static int gc(lua_State* l) {
             clg::impl::raii_state_updater u(l);
+            if (!lua_isuserdata(l, 1)) {
+                return 0; // TODO
+            }
+
             assert(lua_isuserdata(l, 1));
 
             auto helper = static_cast<userdata_helper*>(lua_touserdata(l, 1));
             if (lua_getuservalue(l, 1) != LUA_TNIL) {
                 lua_pop(l, 1);
                 // use lua_self for the userdata, memory management is not trivial in this case
-                if (helper->expired()) {
+                if (!helper->expired()) {
                     auto self = helper->asLuaSelf();
                     assert(self != nullptr);
                     auto classname = clg::class_name<C>();
