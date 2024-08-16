@@ -12,6 +12,9 @@ namespace clg {
     class lua_self;
     namespace impl {
         inline void invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
+        inline void update_strong_userdata(clg::lua_self& self, clg::ref value) {
+            self.
+        }
     }
 
     namespace debug {
@@ -44,13 +47,14 @@ namespace clg {
      */
     class lua_self {
         friend void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
+        friend void update_strong_userdata(clg::lua_self& self, clg::ref value);
         template<typename T, typename EnableIf>
         friend struct converter_shared_ptr_impl;
     public:
 
-        table_view luaDataHolder() const noexcept {
+        clg::table_view luaDataHolder() const noexcept {
             auto userdata = luaSelf().as<userdata_view>();
-            assert(!userdata.isNull());
+            assert(("no userdata, object is not initialized yet", !userdata.isNull()));
             return userdata.uservalue();
         }
 
@@ -63,8 +67,11 @@ namespace clg {
     protected:
 
         clg::ref luaSelf() const noexcept {
-            auto res = mWeakUserdataHolder.lock();
-            assert(!res.isNull()); // TODO description
+            if (!mInitialized) {
+                return {}; // userdata do not exists yet
+            }
+            auto res = mWeakUserdata.lock();
+            assert(("lua self userdata must exist after its initialization", !res.isNull()));
             return res;
         }
 
@@ -72,13 +79,15 @@ namespace clg {
 
     private:
 
-        clg::ref mUserdata;
+        clg::userdata_view mStrongUserdata;
         /**
          * @brief Weak reference to lua userdata pushed to lua
          */
-        clg::weak_ref mWeakUserdataHolder;
+        clg::weak_ref mWeakUserdata;
 
         std::weak_ptr<void> mUseCount;
+
+        bool mInitialized = false;
 
 #if CLG_OBJECT_COUNTER
         struct ObjectCounter {
@@ -100,6 +109,12 @@ namespace clg {
         s.handle_lua_virtual_func_assignment(name, std::move(value));
     }
 
+    inline void impl::update_strong_userdata(clg::lua_self& self, clg::ref value) {
+        assert(!value.isNull());
+        assert(self.mStrongUserdata.isNull());
+        self.mStrongUserdata = std::move(value);
+    }
+
     /**
      * userdata
      */
@@ -119,31 +134,33 @@ namespace clg {
             return clg::converter_error{"not a userdata"};
         }
 
-        static void push_userdata(lua_State* l, std::shared_ptr<T> v) {
+        static void push_new_userdata(lua_State* l, const std::shared_ptr<T>& v) {
             clg::stack_integrity_check c(l, 1);
-            auto classname = clg::class_name<T>();
-            auto t = static_cast<userdata_helper*>(lua_newuserdata(l, sizeof(userdata_helper)));
+            auto userdata = static_cast<userdata_helper*>(lua_newuserdata(l, sizeof(userdata_helper)));
+            new(userdata) userdata_helper(v);
             if constexpr (std::is_polymorphic_v<T>) {
-                if (auto self = dynamic_cast<clg::lua_self*>(v.get())) {
+                if (auto self = std::dynamic_pointer_cast<clg::lua_self>(v)) {
+                    assert(("lua self userdata should be initialized only once", !self->mInitialized));
                     self->mUseCount = v;
-                    self->mUserdata.push_value_to_stack(l);
-                    if (lua_getuservalue(l, -1);
-
+                    lua_pushvalue(l, -1);       // duplicate userdata
+                    self->mWeakUserdata = ref::from_stack(l);   // saving user data in a weak reference
+                    lua_createtable(l, 0, 0);   // create empty table
+                    lua_setuservalue(l, -2);    // setting uservalue (clg stores table with arbitrary lua data in uservalue slot)
+                    userdata->setAsLuaSelf(self);
+                    self->mInitialized = true;
                 }
             }
 
-            new(t) userdata_helper(std::move(v));
-#if LUA_VERSION_NUM != 501
+            auto classname = clg::class_name<T>();
             auto r = lua_getglobal(l, classname.c_str());
-#else
-            lua_getglobal(l, classname.c_str());
-            auto r = lua_type(l, -1);
-#endif
             if (r != LUA_TNIL) {
                 if (lua_getmetatable(l, -1)) {
                     lua_setmetatable(l, -3);
                 }
                 lua_pop(l, 1);
+            }
+            else {
+                assert(false); // TODO temporary
             }
         }
 
@@ -156,20 +173,34 @@ namespace clg {
 
             if constexpr (std::is_polymorphic_v<T>) {
                 if (auto self = dynamic_cast<clg::lua_self*>(v.get())) {
-                    auto& weakRef = self->mUserdataHolder;
-                    if (auto lock = weakRef.lock()) {
-                        lock.push_value_to_stack(l);
-                        return 1;
-                    }
 #if CLG_OBJECT_COUNTER
                     if (!self->mObjectCounter) {
-                        self->mObjectCounter.emplace(self);
+                        self->mObjectCounter.emplace(self); // TODO recheck object counting
                     }
 #endif
+
+                    if (!self->mInitialized) {
+                        // userdata is not created yet, so create it and return
+                        push_new_userdata(l, v);
+                        return 1;
+                    }
+
+                    if (!self->mStrongUserdata.isNull()) {
+                        // in this case userdata is unreachable in regular lua usage and stores only in lua registry
+                        auto b = self->switch_to_shared();
+                        assert(b);
+                        self->mStrongUserdata.push_value_to_stack(l);
+                        return 1;
+                    }
+
+                    // otherwise, we have already userdata in lua, push it using weak reference
+                    self->mWeakUserdata.lock().push_value_to_stack(l);
+                    return 1;
                 }
             }
 
-            push_shared_ptr_userdata(l, std::move(v));
+            // if we get there, we don't use lua self and we have to create new userdata each time
+            push_new_userdata(l, v);
             return 1;
         }
     };

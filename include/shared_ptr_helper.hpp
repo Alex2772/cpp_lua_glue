@@ -10,6 +10,8 @@
 #include <variant>
 
 namespace clg {
+    class lua_self;
+
     struct converter_error {
         const char* errorLiteral;
     };
@@ -77,17 +79,16 @@ namespace clg {
         userdata_helper(std::shared_ptr<T> ptr) : mPtr(weak_ptr(convert_to_void_p(std::move(ptr)))), mType(typeid(T)) {
         }
 
+        bool expired() {
+            if (auto weak = std::get_if<weak_ptr>(&mPtr)) {
+                return weak.expired();
+            }
+            return false;
+        }
+
         template<typename T>
         clg::converter_result<std::shared_ptr<T>> as() {
-            auto ptr = std::visit([](const auto& ptr) -> shared_ptr {
-                using type = std::decay_t<decltype(ptr)>;
-                if constexpr (std::is_same_v<type, shared_ptr>) {
-                    return ptr;
-                }
-                else {
-                    return ptr.lock();
-                }
-            }, mPtr);
+            auto ptr = get_shared();
             if constexpr (std::is_base_of_v<allow_lua_inheritance, T>) {
                 auto inheritance = reinterpret_cast<const std::shared_ptr<allow_lua_inheritance>&>(ptr);
                 return std::dynamic_pointer_cast<T>(inheritance);
@@ -101,21 +102,36 @@ namespace clg {
             }
         }
 
-        void switch_to_shared() {
+        bool switch_to_shared() {
             if (auto weak = std::get_if<weak_ptr>(&mPtr)) {
                 mPtr = weak->lock();
+                return true;
             }
+
+            return false;
         }
 
-        void switch_to_weak() {
+        bool switch_to_weak() {
             if (auto shared = std::get_if<shared_ptr>(&mPtr)) {
                 mPtr = weak_ptr(*shared);
+                return true;
             }
+
+            return false;
+        }
+
+        void setAsLuaSelf(std::weak_ptr<lua_self> ptr) {
+            mAsLuaSelf = std::move(ptr);
+        }
+
+        std::shared_ptr<lua_self> asLuaSelf() {
+            return mAsLuaSelf.lock();
         }
 
     private:
         std::variant<shared_ptr, weak_ptr> mPtr;
         const std::type_info& mType;
+        std::weak_ptr<lua_self> mAsLuaSelf;
 
         template<typename T>
         std::shared_ptr<void> convert_to_void_p(std::shared_ptr<T> ptr) {

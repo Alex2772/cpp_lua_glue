@@ -135,20 +135,49 @@ namespace clg {
 
         static int gc(lua_State* l) {
             clg::impl::raii_state_updater u(l);
-            if (lua_isuserdata(l, 1)) {
-                auto helper = static_cast<shared_ptr_helper*>(lua_touserdata(l, 1));
-                if constexpr (std::is_base_of_v<lua_self, C>) {
-                    lua_getuservalue(l, 1);
-                    static_cast<lua_self*>(helper->ptr.get())->updateDataholder(clg::ref::from_stack(l));
+            assert(lua_isuserdata(l, 1));
+
+            auto helper = static_cast<userdata_helper*>(lua_touserdata(l, 1));
+            if (lua_getuservalue(l, 1) != LUA_TNIL) {
+                lua_pop(l, 1);
+                // use lua_self for the userdata, memory management is not trivial in this case
+                if (helper->expired()) {
+                    auto self = helper->asLuaSelf();
+                    assert(self != nullptr);
+                    auto classname = clg::class_name<C>();
+                    lua_getglobal(l, classname.c_str());
+                    assert(lua_type(l, -1) == LUA_TTABLE);
+                    if (lua_getmetatable(l, -1)) {
+                        lua_setmetatable(l, 1); // restore metatable, mark object for re-finalization, see https://www.lua.org/manual/5.4/manual.html#2.5.3
+                        lua_pop(l, 1);          // pop global table
+                        lua_pushvalue(l, 1);
+                        impl::update_strong_userdata(*self, clg::ref::from_stack(l)); // save object in global registry, permanent resurrect
+                        auto b = helper->switch_to_weak(); // switching to weak_ptr to avoid cyclic links
+                        assert(b);
+                    }
+                    else {
+                        // TODO is it reachable?
+                        helper->~userdata_helper();
+                    }
                 }
+                else {
+                    // associated object is dead, helper is not needed anymore, call destructor of helper
+                    helper->~userdata_helper();
+                }
+            }
+            else {
+                // just call destructor of helper
                 helper->~shared_ptr_helper();
             }
+
             return 0;
         }
 
         static int clg_lua_self_destroy(lua_State* l) {
+            // TODO окончательно выпилить эту хуйню
             return 0;
         }
+
         static int eq(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             auto v1 = get_from_lua_raw<std::shared_ptr<C>>(l, 1);

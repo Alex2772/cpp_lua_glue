@@ -334,6 +334,15 @@ namespace clg {
         userdata_view(ref r) : ref(std::move(r)) {
         }
 
+        userdata_helper* asUserdataHelper() {
+            clg::stack_integrity_check check;
+            auto l = clg::state();
+            push_value_to_stack(l);
+            auto res = static_cast<userdata_helper*>(lua_touserdata(l, -1));
+            lua_pop(l, 1);
+            return res;
+        }
+
         clg::ref uservalue() const noexcept {
             clg::stack_integrity_check check;
             auto l = clg::state();
