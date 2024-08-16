@@ -218,7 +218,7 @@ namespace clg {
             return buf;
         }
 
-        static int lua_self_index(lua_State* l) {
+        static int index(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             assert(lua_isuserdata(l, 1));
             if (lua_isstring(l, 2)) {   // is key is not a string, we have no need to index method table
@@ -240,7 +240,7 @@ namespace clg {
             return 1;
         }
 
-        static int lua_self_newindex(lua_State* l) {
+        static int newindex(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             assert(lua_isuserdata(l, 1));
             auto userdata = static_cast<userdata_helper*>(lua_touserdata(l, 1));
@@ -306,8 +306,8 @@ namespace clg {
                     { "__eq", eq },
                     { "__concat", concat },
                     { "__tostring", tostring },
-                    { "__index", lua_self_index },
-                    { "__newindex", lua_self_newindex}
+                    { "__index", index },
+                    { "__newindex", newindex}
             };
             metatableFunctions.reserve(metatableFunctions.size() + mMetaFunctions.size() + 1);
             for (const auto& v : mMetaFunctions) {
