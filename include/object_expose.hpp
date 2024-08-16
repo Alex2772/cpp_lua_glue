@@ -49,11 +49,7 @@ namespace clg {
     public:
 
         table_view luaDataHolder() const noexcept {
-            if (!mDataHolder.isNull()) {
-                return mDataHolder;
-            }
-
-            auto userdata = mUserdataHolder.lock().as<userdata_view>();
+            auto userdata = luaSelf().as<userdata_view>();
             assert(!userdata.isNull());
             return userdata.uservalue();
         }
@@ -64,39 +60,23 @@ namespace clg {
             return mUseCount.use_count();
         }
 
-        void updateDataholder(clg::table_view t) noexcept {
-            mDataHolder = std::move(t);
-            assert(!mDataHolder.isNull());
-            assert(mDataHolder.as_converter_result<table>().is_ok()); // temporary
-        }
-
     protected:
 
         clg::ref luaSelf() const noexcept {
-            return mUserdataHolder.lock();
+            auto res = mWeakUserdataHolder.lock();
+            assert(!res.isNull()); // TODO description
+            return res;
         }
 
         virtual void handle_lua_virtual_func_assignment(std::string_view name, clg::ref value) {}
 
     private:
-        /**
-         * @brief Lua table with some arbirtary data accessible from lua
-         * @note If there is at least one reference on the object's userdata in lua, this table is stored in uservalue
-         *       field of userdata (clg uses only 1 uservalue slot) and mDataHolder is nil, use luaDataHolder() method
-         *       to access it. (We need it to avoid cyclic links and help lua garbage collector to work properly)
-         *       If there is no userdata in lua (userdata has been collected), mDataHolder must be non-nil and contain
-         *       data holder table.
-         */
-        clg::table_view mDataHolder;
+
+        clg::ref mUserdata;
         /**
          * @brief Weak reference to lua userdata pushed to lua
          */
-        clg::weak_ref mUserdataHolder;
-        /**
-         * @brief True if we need to initialized data holder.
-         * @note Data holder table will be created on the first time pushing to lua
-         */
-        bool mIsDataHolderInitialized = false;
+        clg::weak_ref mWeakUserdataHolder;
 
         std::weak_ptr<void> mUseCount;
 
@@ -125,7 +105,7 @@ namespace clg {
      */
     template<typename T, typename EnableIf = void>
     struct converter_shared_ptr_impl {
-        static constexpr bool use_lua_self = std::is_base_of_v<clg::lua_self, T>;
+        // static constexpr bool use_lua_self = std::is_base_of_v<clg::lua_self, T>; // TODO recheck constexprness
 
         static converter_result<std::shared_ptr<T>> from_lua(lua_State* l, int n) {
             if (lua_isnil(l, n)) {
@@ -133,34 +113,26 @@ namespace clg {
             }
 
             if (lua_isuserdata(l, n)) {
-                return reinterpret_cast<shared_ptr_helper*>(lua_touserdata(l, n))->as<T>();
+                return reinterpret_cast<userdata_helper*>(lua_touserdata(l, n))->as<T>();
             }
 
             return clg::converter_error{"not a userdata"};
         }
 
-        static void push_shared_ptr_userdata(lua_State* l, std::shared_ptr<T> v) {
+        static void push_userdata(lua_State* l, std::shared_ptr<T> v) {
             clg::stack_integrity_check c(l, 1);
             auto classname = clg::class_name<T>();
-            auto t = static_cast<shared_ptr_helper*>(lua_newuserdata(l, sizeof(shared_ptr_helper)));
+            auto t = static_cast<userdata_helper*>(lua_newuserdata(l, sizeof(userdata_helper)));
             if constexpr (std::is_polymorphic_v<T>) {
                 if (auto self = dynamic_cast<clg::lua_self*>(v.get())) {
                     self->mUseCount = v;
-                    if (!self->mIsDataHolderInitialized) {
-                        lua_createtable(l, 0, 0);
-                        lua_setuservalue(l, -2);
-                        self->mIsDataHolderInitialized = true;
-                    }
-                    else {
-                        assert(!self->mDataHolder.isNull());
-                        self->mDataHolder.push_value_to_stack(l);
-                        lua_setuservalue(l, -2);
-                        self->mDataHolder = nullptr;
-                    }
+                    self->mUserdata.push_value_to_stack(l);
+                    if (lua_getuservalue(l, -1);
+
                 }
             }
 
-            new(t) shared_ptr_helper(std::move(v));
+            new(t) userdata_helper(std::move(v));
 #if LUA_VERSION_NUM != 501
             auto r = lua_getglobal(l, classname.c_str());
 #else

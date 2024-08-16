@@ -69,32 +69,31 @@ namespace clg {
         virtual ~allow_lua_inheritance() = default;
     };
 
-    struct shared_ptr_helper {
-        std::shared_ptr<void> ptr;
-        const std::type_info& type;
-        std::function<void()> onDestroy;
-
+    class userdata_helper {
+        using shared_ptr = std::shared_ptr<void>;
+        using weak_ptr = std::weak_ptr<void>;
+    public:
         template<typename T>
-        shared_ptr_helper(std::shared_ptr<T> ptr) : ptr(convert_to_void_p(std::move(ptr))), type(typeid(T)) {
-        }
-
-        ~shared_ptr_helper() {
-            if (onDestroy) {
-                onDestroy();
-            }
+        userdata_helper(std::shared_ptr<T> ptr) : mPtr(weak_ptr(convert_to_void_p(std::move(ptr)))), mType(typeid(T)) {
         }
 
         template<typename T>
         clg::converter_result<std::shared_ptr<T>> as() {
-            if (ptr == nullptr) {
-                return clg::converter_error{":destroy()-ed cpp object"};
-            }
+            auto ptr = std::visit([](const auto& ptr) -> shared_ptr {
+                using type = std::decay_t<decltype(ptr)>;
+                if constexpr (std::is_same_v<type, shared_ptr>) {
+                    return ptr;
+                }
+                else {
+                    return ptr.lock();
+                }
+            }, mPtr);
             if constexpr (std::is_base_of_v<allow_lua_inheritance, T>) {
                 auto inheritance = reinterpret_cast<const std::shared_ptr<allow_lua_inheritance>&>(ptr);
                 return std::dynamic_pointer_cast<T>(inheritance);
             }
             else {
-                if (auto& expected = typeid(T); expected != type) {
+                if (auto& expected = typeid(T); expected != mType) {
                     static std::string e = std::string("type mismatch: expected ") + expected.name() + "\nnote: extend clg::allow_lua_inheritance to allow inheritance";
                     return converter_error{e.c_str()};
                 }
@@ -102,7 +101,21 @@ namespace clg {
             }
         }
 
+        void switch_to_shared() {
+            if (auto weak = std::get_if<weak_ptr>(&mPtr)) {
+                mPtr = weak->lock();
+            }
+        }
+
+        void switch_to_weak() {
+            if (auto shared = std::get_if<shared_ptr>(&mPtr)) {
+                mPtr = weak_ptr(*shared);
+            }
+        }
+
     private:
+        std::variant<shared_ptr, weak_ptr> mPtr;
+        const std::type_info& mType;
 
         template<typename T>
         std::shared_ptr<void> convert_to_void_p(std::shared_ptr<T> ptr) {
