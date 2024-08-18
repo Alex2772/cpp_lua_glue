@@ -135,6 +135,7 @@ namespace clg {
 
         static int gc(lua_State* l) {
             clg::impl::raii_state_updater u(l);
+            clg::stack_integrity_check c(l, 0);
             if (!lua_isuserdata(l, 1)) {
                 return 0; // TODO
             }
@@ -170,6 +171,7 @@ namespace clg {
                 }
             }
             else {
+                lua_pop(l, 1);
                 // just call destructor of helper
                 helper->~userdata_helper();
             }
@@ -220,31 +222,37 @@ namespace clg {
 
         static int index(lua_State* l) {
             clg::impl::raii_state_updater u(l);
+            clg::stack_integrity_check c(l, 1);
             assert(lua_isuserdata(l, 1));
-            if (lua_isstring(l, 2)) {   // is key is not a string, we have no need to index method table
-                // trying to index method table
 
-                methods_helper::methods.push_value_to_stack(l); // push table with registered methods
-                lua_pushvalue(l, 2);                            // push key to stack
-                if (lua_rawget(l, -2) != LUA_TNIL) {
-                    lua_remove(l, -2); // remove table from stack
+            if (lua_getuservalue(l, 1) != LUA_TNIL) {
+                lua_pushvalue(l, 2);    // push key to stack
+                if (lua_rawget(l, -2) != LUA_TNIL) { // trying to get value (pops value from stack)
+                    lua_remove(l, -2);      // remove table from stack
                     return 1;
                 }
-                // value has not been found, we need to index uservalue table
-                lua_pop(l, 2); // pop table and nil from stack
+                lua_pop(l, 2);
+            }
+            else {
+                lua_pop(l, 1);
             }
 
-            if (lua_getuservalue(l, 1) == LUA_TNIL) {
-                return 1; // just return nil
+            if (lua_isstring(l, 2)) {   // is key is not a string, we have no need to index method table
+                // trying to index method table
+                methods_helper::methods.push_value_to_stack(l); // push table with registered methods
+                lua_pushvalue(l, 2);                            // push key to stack
+                lua_rawget(l, -2);
+                lua_remove(l, -2);
+                return 1;
             }
-            lua_pushvalue(l, 2);    // push key to stack
-            lua_rawget(l, -2);      // trying to get value (pops value from stack)
-            lua_remove(l, -2);      // remove table from stack
+
+            lua_pushnil(l);
             return 1;
         }
 
         static int newindex(lua_State* l) {
             clg::impl::raii_state_updater u(l);
+            clg::stack_integrity_check c(l, 0);
             assert(lua_isuserdata(l, 1));
             auto userdata = static_cast<userdata_helper*>(lua_touserdata(l, 1));
 

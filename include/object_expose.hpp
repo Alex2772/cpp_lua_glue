@@ -51,9 +51,13 @@ namespace clg {
     public:
 
         clg::table_view luaDataHolder() const noexcept {
-            auto userdata = luaSelf().as<userdata_view>();
-            assert(("no userdata, object is not initialized yet", !userdata.isNull()));
-            return userdata.uservalue();
+            auto userdata = luaSelf();
+            if (userdata.isNull()) {
+                return {};
+            }
+            auto res = userdata.uservalue();
+            assert(("uservalue must exist after object has been initialized", !res.isNull()));
+            return res;
         }
 
         virtual ~lua_self() = default;
