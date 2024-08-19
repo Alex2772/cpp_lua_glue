@@ -48,12 +48,7 @@ namespace clg {
     private:
         state_interface& mClg;
 
-        class_registrar(state_interface& clg):
-            mClg(clg)
-        {
-            // in case of automatic memory management is not able to handle lua_self properly, we provide an
-            // additional fallback method to manage memory manually.
-            mMethods.push_back(clg::impl::Method{"destroy", cfunction<clg_lua_self_destroy>("clg_destroy")});
+        class_registrar(state_interface& clg) : mClg(clg) {
         }
 
         lua_cfunctions mMethods;
@@ -137,16 +132,14 @@ namespace clg {
             clg::impl::raii_state_updater u(l);
             clg::stack_integrity_check c(l, 0);
             if (!lua_isuserdata(l, 1)) {
-                return 0; // TODO
+                return 0;
             }
-
-            assert(lua_isuserdata(l, 1));
 
             auto helper = static_cast<userdata_helper*>(lua_touserdata(l, 1));
             if (lua_getuservalue(l, 1) != LUA_TNIL) {
                 lua_pop(l, 1);
                 // use lua_self for the userdata, memory management is not trivial in this case
-                if (!helper->expired()) {
+                if (!helper->expired() && !is_in_exit_handler()) {
                     auto self = helper->asLuaSelf();
                     assert(self != nullptr);
                     auto classname = clg::class_name<C>();
@@ -155,13 +148,12 @@ namespace clg {
                     if (lua_getmetatable(l, -1)) {
                         lua_setmetatable(l, 1); // restore metatable, mark object for re-finalization, see https://www.lua.org/manual/5.4/manual.html#2.5.3
                         lua_pop(l, 1);          // pop global table
-                        lua_pushvalue(l, 1);
+                        lua_pushvalue(l, 1);    // duplicate uservalue
                         impl::update_strong_userdata(*self, clg::ref::from_stack(l)); // save object in global registry, permanent resurrect
                         auto b = helper->switch_to_weak(); // switching to weak_ptr to avoid cyclic links
                         assert(b);
                     }
                     else {
-                        // TODO is it reachable?
                         helper->~userdata_helper();
                     }
                 }
@@ -176,11 +168,6 @@ namespace clg {
                 helper->~userdata_helper();
             }
 
-            return 0;
-        }
-
-        static int clg_lua_self_destroy(lua_State* l) {
-            // TODO окончательно выпилить эту хуйню
             return 0;
         }
 
@@ -247,7 +234,7 @@ namespace clg {
                     break;
 
                 default:
-                    return luaL_error(l, "metamathod __index of clg userdata is applicable to userdata only");
+                    return luaL_error(l, "metamathod __index of clg userdata is applicable to userdata or global class table only");
             }
 
             if (lua_isstring(l, 2)) {   // is key is not a string, we have no need to index method table
@@ -346,15 +333,6 @@ namespace clg {
 
             auto methods = impl::table_from_c_functions(mClg, mMethods);
             methods_helper::methods = std::move(methods);
-            /*
-            if constexpr (std::is_base_of_v<lua_self, C>) {
-                methods_helper::methods = std::move(methods);
-            }
-            else {
-                // in such case we have no data holder, so index metamethod is just a table of methods
-                metatable["__index"] = std::move(methods);
-            }
-             */
 
             clazz.set_metatable(metatable);
 

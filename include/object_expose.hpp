@@ -70,7 +70,7 @@ namespace clg {
 
         clg::userdata_view luaSelf() const noexcept {
             if (!mInitialized) {
-                return {}; // userdata do not exists yet
+                return {}; // userdata do not exist yet
             }
             if (!mStrongUserdata.isNull()) {
                 auto res = mWeakUserdata.lock();
@@ -126,8 +126,6 @@ namespace clg {
      */
     template<typename T, typename EnableIf = void>
     struct converter_shared_ptr_impl {
-        // static constexpr bool use_lua_self = std::is_base_of_v<clg::lua_self, T>; // TODO recheck constexprness
-
         static converter_result<std::shared_ptr<T>> from_lua(lua_State* l, int n) {
             if (lua_isnil(l, n)) {
                 return std::shared_ptr<T>(nullptr);
@@ -165,9 +163,6 @@ namespace clg {
                 }
                 lua_pop(l, 1);
             }
-            else {
-                assert(false); // TODO temporary
-            }
         }
 
         static int to_lua(lua_State* l, std::shared_ptr<T> v) {
@@ -181,7 +176,7 @@ namespace clg {
                 if (auto self = dynamic_cast<clg::lua_self*>(v.get())) {
 #if CLG_OBJECT_COUNTER
                     if (!self->mObjectCounter) {
-                        self->mObjectCounter.emplace(self); // TODO recheck object counting
+                        self->mObjectCounter.emplace(self);
                     }
 #endif
 
