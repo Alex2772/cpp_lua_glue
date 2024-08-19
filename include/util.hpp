@@ -94,5 +94,6 @@ namespace clg {
                     break;
             }
         }
+        fflush(stdout);
     }
 }

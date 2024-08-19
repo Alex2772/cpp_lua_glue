@@ -223,7 +223,10 @@ namespace clg {
         static int index(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             clg::stack_integrity_check c(l, 1);
-            assert(lua_isuserdata(l, 1));
+            if (!lua_isuserdata(l, 1)) {
+                return luaL_error(l, "metamathod __index of clg userdata applicable to userdata only");
+            }
+            // assert(lua_isuserdata(l, 1));
 
             if (lua_getuservalue(l, 1) != LUA_TNIL) {
                 lua_pushvalue(l, 2);    // push key to stack
