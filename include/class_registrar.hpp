@@ -223,10 +223,15 @@ namespace clg {
         static int index(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             clg::stack_integrity_check c(l, 1);
-            if (!lua_isuserdata(l, 1)) {
-                return luaL_error(l, "metamathod __index of clg userdata applicable to userdata only");
+            if (lua_istable(l, 1)) {
+                lua_pushvalue(l, 2);
+                lua_rawget(l, 1);
+                return 1;
             }
-            // assert(lua_isuserdata(l, 1));
+
+            if (!lua_isuserdata(l, 1)) {
+                return luaL_error(l, "metamathod __index of clg userdata is applicable to userdata only");
+            }
 
             if (lua_getuservalue(l, 1) != LUA_TNIL) {
                 lua_pushvalue(l, 2);    // push key to stack
@@ -256,7 +261,9 @@ namespace clg {
         static int newindex(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             clg::stack_integrity_check c(l, 0);
-            assert(lua_isuserdata(l, 1));
+            if (!lua_isuserdata(l, 1)) {
+                return luaL_error(l, "metamathod __newindex of clg userdata is applicable to userdata only");
+            }
             auto userdata = static_cast<userdata_helper*>(lua_touserdata(l, 1));
 
             // if we have ref to userdata in lua, we store data holder in uservalue slot, try to get it
