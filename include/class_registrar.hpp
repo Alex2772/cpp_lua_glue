@@ -124,10 +124,6 @@ namespace clg {
             }
         };
 
-        struct methods_helper {
-            inline static clg::table_view methods;
-        };
-
         static int gc(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             clg::stack_integrity_check c(l, 0);
@@ -239,11 +235,19 @@ namespace clg {
 
             if (lua_isstring(l, 2)) {   // is key is not a string, we have no need to index method table
                 // trying to index method table
-                methods_helper::methods.push_value_to_stack(l); // push table with registered methods
-                lua_pushvalue(l, 2);                            // push key to stack
-                lua_rawget(l, -2);
-                lua_remove(l, -2);
-                return 1;
+                if (lua_getmetatable(l, 1)) {               // get metatable of userdata
+                    lua_pushstring(l, "__clg_methods");
+                    if (lua_rawget(l, -2) == LUA_TTABLE) {  // get table with registered methods
+                        lua_remove(l, -2);                  // remove metatable
+                        lua_pushvalue(l, 2);                // push key to stack
+                        lua_rawget(l, -2);                  // indexing table of methods
+                        lua_remove(l, -2);                  // remove table with registered methods
+                        return 1;
+                    }
+                    else {
+                        lua_pop(l, 1);  // remove metatable
+                    }
+                }
             }
 
             lua_pushnil(l);
@@ -332,7 +336,7 @@ namespace clg {
             clg::table_view metatable = impl::table_from_c_functions(mClg, metatableFunctions);
 
             auto methods = impl::table_from_c_functions(mClg, mMethods);
-            methods_helper::methods = std::move(methods);
+            metatable["__clg_methods"] = std::move(methods);
 
             clazz.set_metatable(metatable);
 
