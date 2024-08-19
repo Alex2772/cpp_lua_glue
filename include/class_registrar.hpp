@@ -223,26 +223,31 @@ namespace clg {
         static int index(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             clg::stack_integrity_check c(l, 1);
-            if (lua_istable(l, 1)) {
-                lua_pushvalue(l, 2);
-                lua_rawget(l, 1);
-                return 1;
-            }
 
-            if (!lua_isuserdata(l, 1)) {
-                return luaL_error(l, "metamathod __index of clg userdata is applicable to userdata only");
-            }
-
-            if (lua_getuservalue(l, 1) != LUA_TNIL) {
-                lua_pushvalue(l, 2);    // push key to stack
-                if (lua_rawget(l, -2) != LUA_TNIL) { // trying to get value (pops value from stack)
-                    lua_remove(l, -2);      // remove table from stack
+            switch (lua_type(l, 1)) {
+                case LUA_TTABLE:
+                    lua_pushvalue(l, 2);
+                    if (lua_rawget(l, 1) == LUA_TNIL) {
+                        lua_pop(l, 1);
+                        break;
+                    }
                     return 1;
-                }
-                lua_pop(l, 2);
-            }
-            else {
-                lua_pop(l, 1);
+                case LUA_TUSERDATA:
+                    if (lua_getuservalue(l, 1) != LUA_TNIL) {
+                        lua_pushvalue(l, 2);    // push key to stack
+                        if (lua_rawget(l, -2) != LUA_TNIL) { // trying to get value (pops value from stack)
+                            lua_remove(l, -2);      // remove table from stack
+                            return 1;
+                        }
+                        lua_pop(l, 2);
+                    }
+                    else {
+                        lua_pop(l, 1);
+                    }
+                    break;
+
+                default:
+                    return luaL_error(l, "metamathod __index of clg userdata is applicable to userdata only");
             }
 
             if (lua_isstring(l, 2)) {   // is key is not a string, we have no need to index method table
