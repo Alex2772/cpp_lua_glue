@@ -53,8 +53,9 @@ namespace clg {
                 return *this;
             }
             releaseIfNotNull();
-            other.push_value_to_stack(clg::state());
-            mPtr = new_ref_from_stack(clg::state());
+            auto l = clg::state();
+            other.push_value_to_stack(l);
+            mPtr = new_ref_from_stack(l);
             return *this;
         }
 
