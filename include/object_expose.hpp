@@ -73,7 +73,6 @@ namespace clg {
                 return {}; // userdata do not exist yet
             }
             if (!mStrongUserdata.isNull()) {
-                auto res = mWeakUserdata.lock();
                 return mStrongUserdata;
             }
             auto res = mWeakUserdata.lock();
@@ -199,7 +198,7 @@ namespace clg {
                     }
 
                     // otherwise, we have already userdata in lua, push it using weak reference
-                    self->mWeakUserdata.lock().push_value_to_stack(l);
+                    self->luaSelf().push_value_to_stack(l);
                     return 1;
                 }
             }
