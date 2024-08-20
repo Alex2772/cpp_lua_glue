@@ -169,6 +169,7 @@ namespace clg {
 
         static int eq(lua_State* l) {
             clg::impl::raii_state_updater u(l);
+            stack_integrity_check c(l, 1);
             auto v1 = get_from_lua_raw<std::shared_ptr<C>>(l, 1);
             if (!v1.is_ok()) {
                 push_to_lua(l, false);
@@ -184,6 +185,7 @@ namespace clg {
         }
         static int concat(lua_State* l) {
             clg::impl::raii_state_updater u(l);
+            stack_integrity_check c(l, 1);
             auto v1 = any_to_string(l, 1);
             auto v2 = any_to_string(l, 2);
             v1 += v2;
@@ -192,6 +194,7 @@ namespace clg {
         }
         static int tostring(lua_State* l) {
             clg::impl::raii_state_updater u(l);
+            stack_integrity_check c(l, 1);
             auto v1 = get_from_lua<std::shared_ptr<C>>(l, 1);
             push_to_lua(l, toString(v1));
             return 1;
