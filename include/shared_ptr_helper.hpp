@@ -10,6 +10,8 @@
 #include <variant>
 
 namespace clg {
+    class lua_self;
+
     struct converter_error {
         const char* errorLiteral;
     };
@@ -69,43 +71,38 @@ namespace clg {
         virtual ~allow_lua_inheritance() = default;
     };
 
-    namespace impl {
-        struct ptr_helper {
-            virtual ~ptr_helper() = default;
-        };
-    }
-
-    struct shared_ptr_helper: impl::ptr_helper {
-        std::shared_ptr<void> ptr;
-        const std::type_info& type;
-        std::weak_ptr<void> weakPtr;
-        std::function<void()> onDestroy;
-
-
+    class userdata_helper {
+        using shared_ptr = std::shared_ptr<void>;
+        using weak_ptr = std::weak_ptr<void>;
+    public:
         template<typename T>
-        shared_ptr_helper(std::shared_ptr<T> ptr):
-            ptr(convert_to_void_p(std::move(ptr))),
-            type(typeid(T)),
-            weakPtr(ptr)
-        {
+        userdata_helper(std::shared_ptr<T> ptr) : mPtr(convert_to_void_p(std::move(ptr))), mType(typeid(T)) {
         }
-        ~shared_ptr_helper() {
-            if (onDestroy) onDestroy();
+
+        bool expired() {
+            if (auto weak = std::get_if<weak_ptr>(&mPtr)) {
+                return weak->expired();
+            }
+            return false;
         }
 
         template<typename T>
         clg::converter_result<std::shared_ptr<T>> as() {
-            if (ptr == nullptr) {
-                ptr = weakPtr.lock();
-            }
-            if (ptr == nullptr) {
-                return clg::converter_error{":destroy()-ed cpp object"};
-            }
+            auto ptr = std::visit([](const auto& v) -> shared_ptr {
+                using type = std::decay_t<decltype(v)>;
+                if constexpr (std::is_same_v<shared_ptr, type>) {
+                    return v;
+                }
+                else {
+                    return v.lock();
+                }
+            }, mPtr);
             if constexpr (std::is_base_of_v<allow_lua_inheritance, T>) {
                 auto inheritance = reinterpret_cast<const std::shared_ptr<allow_lua_inheritance>&>(ptr);
                 return std::dynamic_pointer_cast<T>(inheritance);
-            } else {
-                if (auto& expected = typeid(T); expected != type) {
+            }
+            else {
+                if (auto& expected = typeid(T); expected != mType) {
                     static std::string e = std::string("type mismatch: expected ") + expected.name() + "\nnote: extend clg::allow_lua_inheritance to allow inheritance";
                     return converter_error{e.c_str()};
                 }
@@ -113,52 +110,41 @@ namespace clg {
             }
         }
 
+        bool switch_to_shared() {
+            if (auto weak = std::get_if<weak_ptr>(&mPtr)) {
+                mPtr = weak->lock();
+                return true;
+            }
+
+            return false;
+        }
+
+        bool switch_to_weak() {
+            if (auto shared = std::get_if<shared_ptr>(&mPtr)) {
+                mPtr = weak_ptr(*shared);
+                return true;
+            }
+
+            return false;
+        }
+
+        void setAsLuaSelf(std::weak_ptr<lua_self> ptr) {
+            mAsLuaSelf = std::move(ptr);
+        }
+
+        std::shared_ptr<lua_self> asLuaSelf() {
+            return mAsLuaSelf.lock();
+        }
+
     private:
+        std::variant<shared_ptr, weak_ptr> mPtr;
+        const std::type_info& mType;
+        std::weak_ptr<lua_self> mAsLuaSelf;
 
         template<typename T>
         std::shared_ptr<void> convert_to_void_p(std::shared_ptr<T> ptr) {
             if constexpr (std::is_base_of_v<allow_lua_inheritance, T>) {
                 return std::shared_ptr<allow_lua_inheritance>(std::move(ptr));
-            } else {
-                return ptr;
-            }
-        }
-    };
-
-
-    struct weak_ptr_helper: impl::ptr_helper {
-        std::weak_ptr<void> ptr;
-        const std::type_info& type;
-
-
-        template<typename T>
-        weak_ptr_helper(std::weak_ptr<T> ptr):
-            ptr(convert_to_void_p(std::move(ptr))),
-            type(typeid(T))
-        {
-        }
-        ~weak_ptr_helper() = default;
-
-        template<typename T>
-        std::weak_ptr<T> as() const {
-            if constexpr (std::is_base_of_v<allow_lua_inheritance, T>) {
-                auto inheritance = reinterpret_cast<const std::weak_ptr<allow_lua_inheritance>&>(ptr);
-                return std::dynamic_pointer_cast<T>(inheritance);
-            } else {
-                if (auto& expected = typeid(T); expected != type) {
-                    throw std::runtime_error(
-                            std::string("type mismatch: expected ") + expected.name() + ", actual " + type.name() + "\nnote: extend clg::allow_lua_inheritance to allow inheritance");
-                }
-                return reinterpret_cast<const std::weak_ptr<T>&>(ptr);
-            }
-        }
-
-    private:
-
-        template<typename T>
-        std::weak_ptr<void> convert_to_void_p(std::weak_ptr<T> ptr) {
-            if constexpr (std::is_base_of_v<allow_lua_inheritance, T>) {
-                return std::weak_ptr<allow_lua_inheritance>(std::move(ptr));
             } else {
                 return ptr;
             }

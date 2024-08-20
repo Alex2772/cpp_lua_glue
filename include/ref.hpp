@@ -298,7 +298,8 @@ namespace clg {
             std::string_view name;
         };
 
-        table_view(ref r): ref(std::move(r)) {}
+        table_view(ref r): ref(std::move(r)) {
+        }
 
 
         template<typename K, typename V>
@@ -326,6 +327,33 @@ namespace clg {
         }
     };
 
+    class userdata_view : public ref {
+    public:
+        using ref::ref;
+
+        userdata_view(ref r) : ref(std::move(r)) {
+        }
+
+        userdata_helper* asUserdataHelper() {
+            clg::stack_integrity_check check;
+            auto l = clg::state();
+            push_value_to_stack(l);
+            auto res = static_cast<userdata_helper*>(lua_touserdata(l, -1));
+            lua_pop(l, 1);
+            return res;
+        }
+
+        clg::ref uservalue() const noexcept {
+            clg::stack_integrity_check check;
+            auto l = clg::state();
+            push_value_to_stack(l);
+            lua_getuservalue(l, -1);
+            auto res = clg::ref::from_stack(clg::state());
+            lua_pop(l, 1);
+            return res;
+        }
+    };
+
     template<>
     struct converter<clg::ref> {
         static converter_result<ref> from_lua(lua_State* l, int n) {
@@ -346,6 +374,9 @@ namespace clg {
     struct converter<clg::table_view> {
         static converter_result<table_view> from_lua(lua_State* l, int n) {
             lua_pushvalue(l, n);
+            if (!lua_istable(l, -1)) {
+                return converter_error{"not a table"};
+            }
             return table_view(clg::ref::from_stack(l));
         }
         static int to_lua(lua_State* l, const clg::ref& ref) {
@@ -353,4 +384,17 @@ namespace clg {
         }
     };
 
+    template<>
+    struct converter<clg::userdata_view> {
+        static converter_result<userdata_view> from_lua(lua_State* l, int n) {
+            lua_pushvalue(l, n);
+            if (!lua_isuserdata(l, -1)) {
+                return converter_error{"not a userdata"};
+            }
+            return userdata_view(clg::ref::from_stack(l));
+        }
+        static int to_lua(lua_State* l, const clg::ref& ref) {
+            return clg::push_to_lua(l, ref);
+        }
+    };
 }

@@ -6,6 +6,7 @@
 
 #include "clg.hpp"
 #include "table.hpp"
+#include "object_expose.hpp"
 #include <vector>
 #include <cassert>
 #include <cstdio>
@@ -47,12 +48,7 @@ namespace clg {
     private:
         state_interface& mClg;
 
-        class_registrar(state_interface& clg):
-            mClg(clg)
-        {
-            // in case of automatic memory management is not able to handle lua_self properly, we provide an
-            // additional fallback method to manage memory manually.
-            mMethods.push_back(clg::impl::Method{"destroy", cfunction<clg_lua_self_destroy>("clg_destroy")});
+        class_registrar(state_interface& clg) : mClg(clg) {
         }
 
         lua_cfunctions mMethods;
@@ -121,31 +117,6 @@ namespace clg {
             using wrapper_function_helper = wrapper_function_helper_t<typename class_info::args>;
         };
 
-        struct brackets_operator_helper {
-            inline static lua_CFunction func = nullptr;
-            inline static std::optional<clg::ref> methods;
-
-            static int handler(lua_State* L) {
-                clg::impl::raii_state_updater u(L);
-                assert(func != nullptr && methods);
-                if (lua_isstring(L, 2) && !lua_isnumber(L, 2)) {
-                    auto method_name = get_from_lua<std::string_view>(L, 2);
-                    push_to_lua(L, methods->as<table>()[method_name]);
-                    if (!lua_isnil(L, -1)) {
-                        return 1;
-                    }
-
-                    lua_pop(L, 1);
-                }
-
-                lua_pushcfunction(L, func);
-                lua_pushvalue(L, 1);
-                lua_pushvalue(L, 2);
-                lua_call(L, 2, 1);
-                return 1;
-            };
-        };
-
         template<typename... Args>
         struct constructor_helper {
             static std::shared_ptr<C> construct(void* self, Args... args) {
@@ -155,29 +126,50 @@ namespace clg {
 
         static int gc(lua_State* l) {
             clg::impl::raii_state_updater u(l);
-            if (lua_isuserdata(l, 1)) {
-                static_cast<clg::impl::ptr_helper*>(lua_touserdata(l, 1))->~ptr_helper();
-            }
-            return 0;
-        }
-
-        static int clg_lua_self_destroy(lua_State* l) {
-            clg::impl::raii_state_updater u(l);
-            if (!lua_istable(l, -1)) {
+            clg::stack_integrity_check c(l, 0);
+            if (!lua_isuserdata(l, 1)) {
                 return 0;
             }
-            lua_getfield(l, -1, "clg_strongref");
-            if (!lua_isuserdata(l, -1)) {
+
+            auto helper = static_cast<userdata_helper*>(lua_touserdata(l, 1));
+            if (lua_getuservalue(l, 1) != LUA_TNIL) {
                 lua_pop(l, 1);
-                return 0;
+                // use lua_self for the userdata, memory management is not trivial in this case
+                if (!helper->expired() && !is_in_exit_handler()) {
+                    auto self = helper->asLuaSelf();
+                    assert(self != nullptr);
+                    auto classname = clg::class_name<C>();
+                    lua_getglobal(l, classname.c_str());
+                    assert(lua_type(l, -1) == LUA_TTABLE);
+                    if (lua_getmetatable(l, -1)) {
+                        lua_setmetatable(l, 1); // restore metatable, mark object for re-finalization, see https://www.lua.org/manual/5.4/manual.html#2.5.3
+                        lua_pop(l, 1);          // pop global table
+                        lua_pushvalue(l, 1);    // duplicate uservalue
+                        impl::update_strong_userdata(*self, clg::ref::from_stack(l)); // save object in global registry, permanent resurrect
+                        auto b = helper->switch_to_weak(); // switching to weak_ptr to avoid cyclic links
+                        assert(b);
+                    }
+                    else {
+                        helper->~userdata_helper();
+                    }
+                }
+                else {
+                    // associated object is dead, helper is not needed anymore, call destructor of helper
+                    helper->~userdata_helper();
+                }
             }
-
-            reinterpret_cast<clg::shared_ptr_helper*>(lua_touserdata(l, -1))->ptr = nullptr;
+            else {
+                lua_pop(l, 1);
+                // just call destructor of helper
+                helper->~userdata_helper();
+            }
 
             return 0;
         }
+
         static int eq(lua_State* l) {
             clg::impl::raii_state_updater u(l);
+            stack_integrity_check c(l, 1);
             auto v1 = get_from_lua_raw<std::shared_ptr<C>>(l, 1);
             if (!v1.is_ok()) {
                 push_to_lua(l, false);
@@ -193,6 +185,7 @@ namespace clg {
         }
         static int concat(lua_State* l) {
             clg::impl::raii_state_updater u(l);
+            stack_integrity_check c(l, 1);
             auto v1 = any_to_string(l, 1);
             auto v2 = any_to_string(l, 2);
             v1 += v2;
@@ -201,6 +194,7 @@ namespace clg {
         }
         static int tostring(lua_State* l) {
             clg::impl::raii_state_updater u(l);
+            stack_integrity_check c(l, 1);
             auto v1 = get_from_lua<std::shared_ptr<C>>(l, 1);
             push_to_lua(l, toString(v1));
             return 1;
@@ -210,6 +204,81 @@ namespace clg {
             char buf[64];
             std::sprintf(buf, "%s<%p>", class_name<C>().c_str(), v.get());
             return buf;
+        }
+
+        static int index(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
+            clg::stack_integrity_check c(l, 1);
+
+            switch (lua_type(l, 1)) {
+                case LUA_TTABLE:
+                    lua_pushvalue(l, 2);
+                    if (lua_rawget(l, 1) == LUA_TNIL) {
+                        lua_pop(l, 1);
+                        break;
+                    }
+                    return 1;
+                case LUA_TUSERDATA:
+                    if (lua_getuservalue(l, 1) != LUA_TNIL) {
+                        lua_pushvalue(l, 2);    // push key to stack
+                        if (lua_rawget(l, -2) != LUA_TNIL) { // trying to get value (pops value from stack)
+                            lua_remove(l, -2);      // remove table from stack
+                            return 1;
+                        }
+                        lua_pop(l, 2);
+                    }
+                    else {
+                        lua_pop(l, 1);
+                    }
+                    break;
+
+                default:
+                    return luaL_error(l, "metamathod __index of clg userdata is applicable to userdata or global class table only");
+            }
+
+            if (lua_isstring(l, 2)) {   // is key is not a string, we have no need to index method table
+                // trying to index method table
+                if (lua_getmetatable(l, 1)) {               // get metatable of userdata
+                    lua_pushstring(l, "__clg_methods");
+                    if (lua_rawget(l, -2) == LUA_TTABLE) {  // get table with registered methods
+                        lua_remove(l, -2);                  // remove metatable
+                        lua_pushvalue(l, 2);                // push key to stack
+                        lua_rawget(l, -2);                  // indexing table of methods
+                        lua_remove(l, -2);                  // remove table with registered methods
+                        return 1;
+                    }
+                    else {
+                        lua_pop(l, 1);  // remove metatable
+                    }
+                }
+            }
+
+            lua_pushnil(l);
+            return 1;
+        }
+
+        static int newindex(lua_State* l) {
+            clg::impl::raii_state_updater u(l);
+            clg::stack_integrity_check c(l, 0);
+            if (!lua_isuserdata(l, 1)) {
+                return luaL_error(l, "metamathod __newindex of clg userdata is applicable to userdata only");
+            }
+            auto userdata = static_cast<userdata_helper*>(lua_touserdata(l, 1));
+
+            // if we have ref to userdata in lua, we store data holder in uservalue slot, try to get it
+            if (lua_getuservalue(l, 1) != LUA_TTABLE) {
+                return luaL_error(l, "attempt to index clg userdata value without uservalue set (possibly not inherited from clg::lua_self)");
+            }
+            auto self = userdata->asLuaSelf();
+            lua_pushvalue(l, 2);    // push key
+            lua_pushvalue(l, 3);    // push value
+            lua_rawset(l, -3);      // add value to data holder table
+            lua_pop(l, 1);          // pop data holder table
+            if (lua_isstring(l, 2) && lua_isfunction(l, 3)) {
+                lua_pushvalue(l, 3);
+                impl::invoke_handle_lua_virtual_func_assignment(*self, lua_tostring(l, 2), clg::ref::from_stack(l));
+            }
+            return 0;
         }
 
     public:
@@ -257,6 +326,8 @@ namespace clg {
                     { "__eq", eq },
                     { "__concat", concat },
                     { "__tostring", tostring },
+                    { "__index", index },
+                    { "__newindex", newindex}
             };
             metatableFunctions.reserve(metatableFunctions.size() + mMetaFunctions.size() + 1);
             for (const auto& v : mMetaFunctions) {
@@ -268,14 +339,7 @@ namespace clg {
             clg::table_view metatable = impl::table_from_c_functions(mClg, metatableFunctions);
 
             auto methods = impl::table_from_c_functions(mClg, mMethods);
-
-            if (brackets_operator_helper::func) {
-                metatable["__index"] = static_cast<lua_CFunction>(brackets_operator_helper::handler);
-                brackets_operator_helper::methods = std::move(methods);
-            }
-            else {
-                metatable["__index"] = methods;
-            }
+            metatable["__clg_methods"] = std::move(methods);
 
             clazz.set_metatable(metatable);
 
@@ -397,14 +461,5 @@ namespace clg {
             });
             return *this;
         }
-
-        template<auto m>
-        class_registrar<C>& bracketsOperator() {
-            using wrapper_function_helper = typename method_helper<m>::wrapper_function_helper;
-            using my_instance = typename wrapper_function_helper::my_instance;
-            brackets_operator_helper::func = my_instance::call;
-            return *this;
-        }
-
     };
 }
