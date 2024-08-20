@@ -37,7 +37,9 @@ namespace clg {
 
         template<typename... Args>
         void operator()(Args&& ... args) const {
-            if (mRef == nullptr) return;
+            if (mRef == nullptr) {
+                return;
+            }
             const auto L = clg::state();
             push_function_to_be_called();
             if (!lua_isfunction(L, -1)) {

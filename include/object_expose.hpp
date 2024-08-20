@@ -73,7 +73,6 @@ namespace clg {
                 return {}; // userdata do not exist yet
             }
             if (!mStrongUserdata.isNull()) {
-                auto res = mWeakUserdata.lock();
                 return mStrongUserdata;
             }
             auto res = mWeakUserdata.lock();
@@ -147,7 +146,7 @@ namespace clg {
                     assert(("lua self userdata should be initialized only once", !self->mInitialized));
                     self->mUseCount = v;
                     lua_pushvalue(l, -1);       // duplicate userdata
-                    self->mWeakUserdata = ref::from_stack(l);   // saving user data in a weak reference
+                    self->mWeakUserdata.emplace(ref::from_stack(l));   // saving user data in a weak reference
                     lua_createtable(l, 0, 0);   // create empty table
                     lua_setuservalue(l, -2);    // setting uservalue (clg stores table with arbitrary lua data in uservalue slot)
                     userdata->setAsLuaSelf(self);
@@ -193,13 +192,13 @@ namespace clg {
                         assert(helper != nullptr);
                         auto b = helper->switch_to_shared();
                         assert(b);
-                        self->mWeakUserdata = std::move(self->mStrongUserdata);
+                        self->mWeakUserdata.emplace(self->mStrongUserdata);
                         self->mStrongUserdata = nullptr;
                         return 1;
                     }
 
                     // otherwise, we have already userdata in lua, push it using weak reference
-                    self->mWeakUserdata.lock().push_value_to_stack(l);
+                    self->luaSelf().push_value_to_stack(l);
                     return 1;
                 }
             }

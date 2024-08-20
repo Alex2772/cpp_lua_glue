@@ -26,15 +26,13 @@ namespace clg {
     public:
         ref() = default;
         ref(const ref& other) noexcept: mPtr([&] {
-            if (!other.isNull()) {
-                other.push_value_to_stack();
-                clg::check_thread();
-                return incRef();
-            }
-            return -1;
+            auto l = clg::state();
+            other.push_value_to_stack(l);
+            clg::check_thread();
+            return new_ref_from_stack(l);
         }()) {}
         ref(ref&& other) noexcept: mPtr(other.mPtr) {
-            other.mPtr = -1;
+            other.mPtr = LUA_REFNIL;
         }
 
         ref(std::nullptr_t): ref() {}
@@ -47,19 +45,17 @@ namespace clg {
 
         ref& operator=(ref&& other) noexcept {
             mPtr = other.mPtr;
-            other.mPtr = -1;
+            other.mPtr = LUA_REFNIL;
             return *this;
         }
         ref& operator=(const ref& other) noexcept {
-            if (mPtr == other.mPtr) return *this;
-            mPtr = [&] {
-                if (!other.isNull()) {
-                    other.push_value_to_stack();
-                    clg::check_thread();
-                    return incRef();
-                }
-                return -1;
-            }();
+            if (this == &other) {
+                return *this;
+            }
+            releaseIfNotNull();
+            auto l = clg::state();
+            other.push_value_to_stack(l);
+            mPtr = new_ref_from_stack(l);
             return *this;
         }
 
@@ -70,7 +66,7 @@ namespace clg {
 
         ref& operator=(std::nullptr_t) noexcept {
             releaseIfNotNull();
-            mPtr = -1;
+            mPtr = LUA_REFNIL;
             return *this;
         }
 
@@ -121,7 +117,7 @@ namespace clg {
         }
 
         bool isNull() const noexcept {
-            return mPtr == -1;
+            return mPtr == LUA_REFNIL;
         }
 
         bool isFunction() const noexcept {
@@ -183,7 +179,6 @@ namespace clg {
             r.push_value_to_stack();
             bool result = lua_compare(clg::state(), -1, -2, LUA_OPEQ) == 1;
             lua_pop(clg::state(), 2);
-
             return result;
         }
 
@@ -194,30 +189,25 @@ namespace clg {
 
         [[nodiscard]]
         bool operator==(std::nullptr_t) const noexcept {
-            return mPtr == -1;
+            return mPtr == LUA_REFNIL;
         }
 
     private:
-        int mPtr = -1;
+        int mPtr = LUA_REFNIL;
 
         void releaseIfNotNull() {
-            if (mPtr != -1 && !clg::is_in_exit_handler()) {
+            if (mPtr != LUA_REFNIL && !clg::is_in_exit_handler()) {
                 clg::check_thread();
                 luaL_unref(clg::state(), LUA_REGISTRYINDEX, mPtr);
+                mPtr = LUA_REFNIL;
             }
         }
 
-        int incRef() {
-            if (lua_isnil(clg::state(), -1)) {
-                lua_pop(clg::state(), 1);
-                return -1;
-            }
-
-            auto r = luaL_ref(clg::state(), LUA_REGISTRYINDEX);
-            return r;
+        static int new_ref_from_stack(lua_State* l) {
+            return luaL_ref(l, LUA_REGISTRYINDEX);
         }
 
-        ref(lua_State* state) noexcept: mPtr(incRef()) {
+        ref(lua_State* l) noexcept: mPtr(new_ref_from_stack(l)) {
         }
     };
 
