@@ -19,27 +19,22 @@ namespace clg {
             mWrapperObject = clg::ref::from_cpp(L, clg::table{
                 {"value", std::move(r) },
             });
-            mWrapperObject.push_value_to_stack(L);
-
-            clg::push_to_lua(L, clg::table{
-                { "__mode", clg::ref::from_cpp(L, "v") }, // weak reference mode for mWrapperObject's fields
+            mWrapperObject.set_metatable(clg::table{
+                    { "__mode", clg::ref::from_cpp(L, "v") }, // weak reference mode for mWrapperObject's fields
             });
-
-            lua_setmetatable(L, -2);
-            lua_pop(L, 1);
         }
 
         clg::ref lock() const noexcept {
             if (mWrapperObject.isNull()) {
                 return nullptr;
             }
-            return mWrapperObject.as<clg::table>()["value"];
+            return mWrapperObject["value"].ref();
         }
-        clg::ref lua_weak() {
+        const clg::table_view& lua_weak() {
             return mWrapperObject;
         }
 
     private:
-        clg::ref mWrapperObject;
+        clg::table_view mWrapperObject;
     };
 }
