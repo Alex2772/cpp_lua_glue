@@ -35,7 +35,7 @@ namespace clg {
             other.mPtr = LUA_REFNIL;
         }
 
-        ref(std::nullptr_t): ref() {}
+        explicit ref(std::nullptr_t): ref() {}
 
         template<typename T>
         static ref from_cpp(lua_State* lua, const T& t) {
@@ -44,6 +44,7 @@ namespace clg {
         }
 
         ref& operator=(ref&& other) noexcept {
+            releaseIfNotNull();
             mPtr = other.mPtr;
             other.mPtr = LUA_REFNIL;
             return *this;
