@@ -37,6 +37,11 @@ namespace clg {
     };
 
 
+    /**
+     * @brief Unlike a weak_ref, ephemeron_weak_ref store weak value in a table with weak keys.
+     * @note Use it instead of regular weak_ref if you need to make weak ref accessible between marking for finalization
+     *       and invoking __gc metamethod (details of lua garbage collector)
+     */
     class ephemeron_weak_ref {
     public:
         ephemeron_weak_ref() = default;
