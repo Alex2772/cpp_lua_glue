@@ -88,7 +88,7 @@ namespace clg {
         /**
          * @brief Weak reference to lua userdata pushed to lua
          */
-        clg::weak_ref mWeakUserdata;
+        clg::ephemeron_weak_ref mWeakUserdata;
 
         std::weak_ptr<void> mUseCount;
 
@@ -120,6 +120,16 @@ namespace clg {
         self.mStrongUserdata = std::move(value);
     }
 
+    bool is_clg_userdata(lua_State* l, int idx) {
+        if (lua_getmetatable(l, idx)) {
+            lua_pushstring(l, "__clg_methods");
+            bool result = lua_rawget(l, -2) != LUA_TNIL;
+            lua_pop(l, 2);
+            return result;
+        }
+        return false;
+    }
+
     /**
      * userdata
      */
@@ -130,8 +140,12 @@ namespace clg {
                 return std::shared_ptr<T>(nullptr);
             }
 
+            if (!is_clg_userdata(l, n)) {
+                return clg::converter_error{"not a clg userdata"};
+            }
+
             if (lua_isuserdata(l, n)) {
-                return reinterpret_cast<userdata_helper*>(lua_touserdata(l, n))->as<T>();
+                return static_cast<userdata_helper*>(lua_touserdata(l, n))->as<T>();
             }
 
             return clg::converter_error{"not a userdata"};
@@ -147,6 +161,7 @@ namespace clg {
                     self->mUseCount = v;
                     lua_pushvalue(l, -1);       // duplicate userdata
                     self->mWeakUserdata.emplace(ref::from_stack(l));   // saving user data in a weak reference
+                    assert(!self->mWeakUserdata.lock().isNull());
                     lua_createtable(l, 0, 0);   // create empty table
                     lua_setuservalue(l, -2);    // setting uservalue (clg stores table with arbitrary lua data in uservalue slot)
                     userdata->setAsLuaSelf(self);
@@ -154,14 +169,16 @@ namespace clg {
                 }
             }
 
-            auto classname = clg::class_name<T>();
-            auto r = lua_getglobal(l, classname.c_str());
-            if (r != LUA_TNIL) {
-                if (lua_getmetatable(l, -1)) {
-                    lua_setmetatable(l, -3);
-                }
-                lua_pop(l, 1);
-            }
+            clg::state_interface s(l);
+            auto clazz = s.global_variable(clg::class_name<T>());
+            assert(!clazz.isNull());
+            auto clazzMeta = clazz.metatable();
+            assert(!clazzMeta.isNull());
+            auto meta = clazzMeta.template as<table_view>()["__clg_metatable"].ref();
+            assert(!meta.isNull());
+            meta.push_value_to_stack(l);
+            assert(lua_type(l, -1) == LUA_TTABLE);
+            lua_setmetatable(l, -2);
         }
 
         static int to_lua(lua_State* l, std::shared_ptr<T> v) {
@@ -192,8 +209,9 @@ namespace clg {
                         assert(helper != nullptr);
                         auto b = helper->switch_to_shared();
                         assert(b);
-                        self->mWeakUserdata.emplace(self->mStrongUserdata);
-                        self->mStrongUserdata = nullptr;
+                        self->mWeakUserdata.emplace(self->mStrongUserdata, l);
+                        self->mStrongUserdata = clg::ref(nullptr);
+                        assert(!self->mWeakUserdata.lock().isNull());
                         return 1;
                     }
 
