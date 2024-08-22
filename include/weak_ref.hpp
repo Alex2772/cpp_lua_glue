@@ -18,6 +18,9 @@ namespace clg {
                 mWrapperObject.set_metatable(clg::table{
                     { "__mode", clg::ref::from_cpp(l, "v") }, // weak reference mode for mWrapperObject's values
                 });
+                mWrapperObject.set_metatable(clg::table{
+                        {"__mode", "v"} // weak reference mode for mWrapperObject's values
+                });
             }
             mWrapperObject.raw_set("value", r);
         }
