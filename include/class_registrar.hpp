@@ -145,8 +145,6 @@ namespace clg {
                     assert(!meta.isNull());
                     meta.push_value_to_stack(l);
                     assert(lua_type(l, -1) == LUA_TTABLE);
-
-                    assert(lua_type(l, -1) == LUA_TTABLE);
                     lua_setmetatable(l, 1); // restore metatable, mark object for re-finalization, see https://www.lua.org/manual/5.4/manual.html#2.5.3
                     lua_pushvalue(l, 1);    // duplicate uservalue
                     impl::update_strong_userdata(*self, clg::ref::from_stack(l)); // save object in global registry, permanent resurrect
