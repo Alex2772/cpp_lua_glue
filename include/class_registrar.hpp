@@ -34,7 +34,7 @@ namespace clg {
         }
 
         template<typename T>
-        static clg::ref table_from_c_functions(lua_State* L, const T& l) {
+        static clg::table_view table_from_c_functions(lua_State* L, const T& l) {
             clg::stack_integrity_check check(L);
             clg::impl::newlib(L, l);
             return clg::ref::from_stack(L);
@@ -127,10 +127,7 @@ namespace clg {
         static int gc(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             clg::stack_integrity_check c(l, 0);
-            if (!lua_isuserdata(l, 1)) {
-                return 0;
-            }
-
+            assert(lua_isuserdata(l, 1));
             auto helper = static_cast<userdata_helper*>(lua_touserdata(l, 1));
             if (lua_getuservalue(l, 1) != LUA_TNIL) {
                 lua_pop(l, 1);
@@ -138,20 +135,23 @@ namespace clg {
                 if (!helper->expired() && !is_in_exit_handler()) {
                     auto self = helper->asLuaSelf();
                     assert(self != nullptr);
-                    auto classname = clg::class_name<C>();
-                    lua_getglobal(l, classname.c_str());
+
+                    clg::state_interface s(l);
+                    auto clazz = s.global_variable(clg::class_name<C>());
+                    assert(!clazz.isNull());
+                    auto clazzMeta = clazz.metatable();
+                    assert(!clazzMeta.isNull());
+                    auto meta = clazzMeta.template as<table_view>()["__clg_metatable"].ref();
+                    assert(!meta.isNull());
+                    meta.push_value_to_stack(l);
                     assert(lua_type(l, -1) == LUA_TTABLE);
-                    if (lua_getmetatable(l, -1)) {
-                        lua_setmetatable(l, 1); // restore metatable, mark object for re-finalization, see https://www.lua.org/manual/5.4/manual.html#2.5.3
-                        lua_pop(l, 1);          // pop global table
-                        lua_pushvalue(l, 1);    // duplicate uservalue
-                        impl::update_strong_userdata(*self, clg::ref::from_stack(l)); // save object in global registry, permanent resurrect
-                        auto b = helper->switch_to_weak(); // switching to weak_ptr to avoid cyclic links
-                        assert(b);
-                    }
-                    else {
-                        helper->~userdata_helper();
-                    }
+
+                    assert(lua_type(l, -1) == LUA_TTABLE);
+                    lua_setmetatable(l, 1); // restore metatable, mark object for re-finalization, see https://www.lua.org/manual/5.4/manual.html#2.5.3
+                    lua_pushvalue(l, 1);    // duplicate uservalue
+                    impl::update_strong_userdata(*self, clg::ref::from_stack(l)); // save object in global registry, permanent resurrect
+                    auto b = helper->switch_to_weak(); // switching to weak_ptr to avoid cyclic links
+                    assert(b);
                 }
                 else {
                     // associated object is dead, helper is not needed anymore, call destructor of helper
@@ -195,6 +195,7 @@ namespace clg {
         static int tostring(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             stack_integrity_check c(l, 1);
+            assert(lua_isuserdata(l, 1));
             auto v1 = get_from_lua<std::shared_ptr<C>>(l, 1);
             push_to_lua(l, toString(v1));
             return 1;
@@ -209,31 +210,18 @@ namespace clg {
         static int index(lua_State* l) {
             clg::impl::raii_state_updater u(l);
             clg::stack_integrity_check c(l, 1);
+            assert(lua_isuserdata(l, 1));
 
-            switch (lua_type(l, 1)) {
-                case LUA_TTABLE:
-                    lua_pushvalue(l, 2);
-                    if (lua_rawget(l, 1) == LUA_TNIL) {
-                        lua_pop(l, 1);
-                        break;
-                    }
+            if (lua_getuservalue(l, 1) != LUA_TNIL) {
+                lua_pushvalue(l, 2);    // push key to stack
+                if (lua_rawget(l, -2) != LUA_TNIL) { // trying to get value (pops value from stack)
+                    lua_remove(l, -2);      // remove table from stack
                     return 1;
-                case LUA_TUSERDATA:
-                    if (lua_getuservalue(l, 1) != LUA_TNIL) {
-                        lua_pushvalue(l, 2);    // push key to stack
-                        if (lua_rawget(l, -2) != LUA_TNIL) { // trying to get value (pops value from stack)
-                            lua_remove(l, -2);      // remove table from stack
-                            return 1;
-                        }
-                        lua_pop(l, 2);
-                    }
-                    else {
-                        lua_pop(l, 1);
-                    }
-                    break;
-
-                default:
-                    return luaL_error(l, "metamathod __index of clg userdata is applicable to userdata or global class table only");
+                }
+                lua_pop(l, 2);
+            }
+            else {
+                lua_pop(l, 1);
             }
 
             if (lua_isstring(l, 2)) {   // is key is not a string, we have no need to index method table
@@ -339,9 +327,11 @@ namespace clg {
             clg::table_view metatable = impl::table_from_c_functions(mClg, metatableFunctions);
 
             auto methods = impl::table_from_c_functions(mClg, mMethods);
-            metatable["__clg_methods"] = std::move(methods);
-
-            clazz.set_metatable(metatable);
+            metatable["__clg_methods"] = methods;
+            clazz.set_metatable(clg::table{
+                {"__index", std::move(methods)},
+                {"__clg_metatable", std::move(metatable)}
+            });
 
             mClg.set_global_value(classname, clazz);
 
