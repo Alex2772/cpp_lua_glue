@@ -13,6 +13,10 @@
 
 namespace clg {
 
+    struct light_userdata {
+        void* value;
+    };
+
     std::string any_to_string(lua_State* l, int n = -1, int depth = 8, bool showMetatable = true);
 
 
@@ -118,6 +122,21 @@ namespace clg {
     struct converter<void*> {
         static converter_result<void*> from_lua(lua_State* l, int n) {
             return nullptr;
+        }
+    };
+
+    template<>
+    struct converter<light_userdata> {
+        static converter_result<light_userdata> from_lua(lua_State* l, int n) {
+            if (!lua_islightuserdata(l, n)) {
+                return clg::converter_error{"not a light userdata"};
+            }
+            return clg::light_userdata{lua_touserdata(l, n)};
+        }
+
+        static int to_lua(lua_State* l, light_userdata ud) {
+            lua_pushlightuserdata(l, ud.value);
+            return 1;
         }
     };
 

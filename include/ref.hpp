@@ -27,6 +27,7 @@ namespace clg {
         ref() = default;
         ref(const ref& other) noexcept: mPtr([&] {
             auto l = clg::state();
+            stack_integrity_check check(l);
             other.push_value_to_stack(l);
             clg::check_thread();
             return new_ref_from_stack(l);
@@ -53,8 +54,9 @@ namespace clg {
             if (this == &other) {
                 return *this;
             }
-            releaseIfNotNull();
             auto l = clg::state();
+            stack_integrity_check check(l);
+            releaseIfNotNull();
             other.push_value_to_stack(l);
             mPtr = new_ref_from_stack(l);
             return *this;
@@ -103,10 +105,10 @@ namespace clg {
         }
 
         std::string debug_str() const noexcept {
+            clg::stack_integrity_check check(clg::state());
             if (isNull()) {
                 return "\"nil\"";
             }
-            clg::stack_integrity_check check(clg::state());
             push_value_to_stack();
             auto s = clg::any_to_string(clg::state(), -1);
             lua_pop(clg::state(), 1);
@@ -135,6 +137,7 @@ namespace clg {
 
         template<typename T>
         T as() const {
+            stack_integrity_check check(clg::state());
             if constexpr (std::is_convertible_v<std::nullptr_t, T>) {
                 if (isNull()) {
                     return nullptr;
@@ -142,7 +145,6 @@ namespace clg {
             } else {
                 assert(!isNull());
             }
-            stack_integrity_check check(clg::state());
             push_value_to_stack();
 
             return clg::pop_from_lua<T>(clg::state());
@@ -150,8 +152,8 @@ namespace clg {
 
         template<typename T>
         converter_result<T> as_converter_result() const {
-            assert(!isNull());
             stack_integrity_check check(clg::state());
+            assert(!isNull());
             push_value_to_stack();
 
             auto v = clg::get_from_lua_raw<T>(clg::state(), -1);
@@ -161,11 +163,11 @@ namespace clg {
 
         template<typename T>
         std::optional<T> is() const {
+            stack_integrity_check check(clg::state());
             if (isNull()) {
                 return std::nullopt;
             }
 
-            stack_integrity_check check(clg::state());
             auto r = as_converter_result<T>();
             if (r.is_error()) {
                 return std::nullopt;
@@ -193,6 +195,17 @@ namespace clg {
             return mPtr == LUA_REFNIL;
         }
 
+        size_t raw_len(lua_State* l = clg::state()) const noexcept {
+            stack_integrity_check check(l);
+            push_value_to_stack(l);
+            auto result = lua_rawlen(l, -1);
+            lua_pop(l, 1);
+            return static_cast<size_t>(result);
+        }
+
+        template<typename... Args>
+        void invokeNullsafe(Args&& ... args);
+
     private:
         int mPtr = LUA_REFNIL;
 
@@ -217,41 +230,46 @@ namespace clg {
     public:
         using ref::ref;
 
+        template<typename Key>
         struct value_view {
         public:
-            value_view(const table_view& table, const std::string_view& name) : table(table), name(name) {}
+            value_view(const table_view& table, Key&& name) : table(table), key(std::forward<Key>(name)) {}
 
             template<typename T>
             [[nodiscard]]
             T as() const {
-                const auto L = clg::state();
-                table.push_value_to_stack(L);
-                if (!lua_istable(L, -1)) {
-                    lua_pop(L, 1);
+                const auto l = clg::state();
+                stack_integrity_check check(l);
+                table.push_value_to_stack(l);
+                if (!lua_istable(l, -1)) {
+                    lua_pop(l, 1);
                     throw clg_exception("not a table view");
                 }
-                lua_getfield(L, -1, name.data());
-                auto v = clg::get_from_lua<T>(L);
-                lua_pop(L, 2);
+                clg::push_to_lua(l, key);
+                lua_gettable(l, -2);
+                auto v = clg::get_from_lua<T>(l);
+                lua_pop(l, 2);
                 return v;
             }
 
             template<typename T>
             [[nodiscard]]
             std::optional<T> is() const {
-                const auto L = clg::state();
-                table.push_value_to_stack(L);
-                if (!lua_istable(L, -1)) {
-                    lua_pop(L, 1);
+                const auto l = clg::state();
+                stack_integrity_check check(l);
+                table.push_value_to_stack(l);
+                if (!lua_istable(l, -1)) {
+                    lua_pop(l, 1);
                     throw clg_exception("not a table view");
                 }
-                lua_getfield(L, -1, name.data());
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
+                clg::push_to_lua(l, key);
+                lua_gettable(l, -2);
+                if (lua_isnil(l, -1)) {
+                    lua_pop(l, 2);
                     return std::nullopt;
                 }
-                auto v = clg::get_from_lua_raw<T>(L);
-                lua_pop(L, 1);
+                auto v = clg::get_from_lua_raw<T>(l);
+                lua_pop(l, 2);
                 if (v.is_error()) {
                     return std::nullopt;
                 }
@@ -272,21 +290,23 @@ namespace clg {
 
             template<typename T>
             const T& operator=(const T& t) const noexcept {
-                const auto L = clg::state();
-                clg::stack_integrity_check c(L);
-                table.push_value_to_stack();
-                lua_pushstring(L, name.data());
-                clg::push_to_lua(L, t);
-                lua_settable(L, -3);
-                lua_pop(L, 1);
+                const auto l = clg::state();
+                clg::stack_integrity_check c(l);
+                table.push_value_to_stack(l);
+                clg::push_to_lua(l, key);
+                clg::push_to_lua(l, t);
+                lua_settable(l, -3);
+                lua_pop(l, 1);
                 return t;
             }
 
             template<typename... Args>
-            void invokeNullsafe(Args&&... args);
+            void invokeNullsafe(Args&&... args) {
+                ref().invokeNullsafe(std::forward<Args>(args)...);
+            }
         private:
             const table_view& table;
-            std::string_view name;
+            Key key;
         };
 
         table_view(ref r): ref(std::move(r)) {
@@ -307,14 +327,25 @@ namespace clg {
             clg::stack_integrity_check c;
             push_value_to_stack(L);
             lua_len(L, -1);
-            auto v = clg::get_from_lua<int>(L);
+            auto v = clg::get_from_lua<size_t>(L);
             lua_pop(L, 2);
             return v;
         }
 
-        value_view operator[](std::string_view v) const {
+        template<typename Key>
+        value_view<Key> operator[](Key&& k) const {
             assert(!isNull());
-            return { *this, v };
+            return { *this, std::forward<Key>(k) };
+        }
+
+        template<typename Key, typename Factory>
+        value_view<Key> get_or_create(Key&& key, Factory&& valueFactory) {
+            assert(!isNull());
+            value_view<Key> result = (*this)[std::forward<Key>(key)];
+            if (result.ref().isNull()) {
+                result = valueFactory();
+            }
+            return result;
         }
     };
 

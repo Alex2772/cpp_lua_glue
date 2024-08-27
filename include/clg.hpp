@@ -410,11 +410,9 @@ inline std::string clg::any_to_string(lua_State* l, int n, int depth, bool showM
 
 #include "any_wrap.hpp"
 template<typename... Args>
-void clg::table_view::value_view::invokeNullsafe(Args&& ... args) {
-
-    auto r = ref();
-    if (r.isFunction()) {
-        clg::function(std::move(r))(std::forward<Args>(args)...);
+void clg::ref::invokeNullsafe(Args&& ... args) {
+    if (isFunction()) {
+        clg::function(*this)(std::forward<Args>(args)...);
     }
 }
 
