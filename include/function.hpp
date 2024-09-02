@@ -86,6 +86,10 @@ namespace clg {
 
         void push() const noexcept {}
 
+        const clg::ref& ref() const noexcept {
+            return mRef;
+        }
+
         void push_function_to_be_called() const noexcept {
             mRef.push_value_to_stack();
         }
@@ -149,8 +153,8 @@ namespace clg {
             }
             return clg::function{ std::move(*r) };
         }
-        static int to_lua(lua_State* l, const clg::ref& ref) {
-            ref.push_value_to_stack(l);
+        static int to_lua(lua_State* l, const clg::function& f) {
+            f.ref().push_value_to_stack(l);
             return 1;
         }
     };
