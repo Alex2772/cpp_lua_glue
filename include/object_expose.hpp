@@ -29,7 +29,7 @@ namespace clg {
         static table_view t = []() {
             table_view result = ref::from_cpp(clg::state(), table{});
             result.set_metatable(table{
-                {"__mode", clg::ref::from_cpp(clg::state(), "v")}
+                {"__mode", clg::ref::from_cpp(clg::state(), "k")}
             });
             return result;
         }();
