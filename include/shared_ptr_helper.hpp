@@ -86,6 +86,10 @@ namespace clg {
             return false;
         }
 
+        bool is_strong_ptr_stored() const noexcept {
+            return std::holds_alternative<shared_ptr>(mPtr);
+        }
+
         template<typename T>
         clg::converter_result<std::shared_ptr<T>> as() {
             auto ptr = std::visit([](const auto& v) -> shared_ptr {

@@ -42,6 +42,36 @@ namespace clg {
 
     }
 
+    /**
+	* @brief Forces changing clg userdata state to registry state
+	* @note clg at the moment can't handle registry links to clg userdata properly, it may lead to memory links,
+	*		this function helps to resolve these links (i.e. custom garbage collector cycle). You should force switching
+	*		to registry state every userdata that is not reachable in regular lua usage.
+	*/
+    inline void forceSwitchToRegistry(lua_State* l, int index) {
+      	auto helper = static_cast<userdata_helper*>(lua_touserdata(l, index));
+        if (!helper->is_strong_ptr_stored()) {
+            return;
+        }
+    	auto self = helper->asLuaSelf();
+        assert(self != nullptr);
+
+        clg::state_interface s(l);
+        auto clazz = s.global_variable(clg::class_name<C>());
+        assert(!clazz.isNull());
+        auto clazzMeta = clazz.metatable();
+        assert(!clazzMeta.isNull());
+        auto meta = clazzMeta.template as<table_view>()["__clg_metatable"].ref();
+        assert(!meta.isNull());
+        meta.push_value_to_stack(l);
+        assert(lua_type(l, -1) == LUA_TTABLE);
+        lua_setmetatable(l, index); // restore metatable, mark object for re-finalization, see https://www.lua.org/manual/5.4/manual.html#2.5.3
+        lua_pushvalue(l, 1);    // duplicate uservalue
+        impl::update_strong_userdata(*self, clg::ref::from_stack(l)); // save object in global registry, permanent resurrect
+        auto b = helper->switch_to_weak(); // switching to weak_ptr to avoid cyclic links
+        assert(b);
+    }
+
     template<class C>
     class class_registrar {
     friend class clg::state_interface;

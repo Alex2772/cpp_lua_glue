@@ -25,6 +25,17 @@ namespace clg {
     [[nodiscard]]
     std::set<lua_self*>& object_counters();
 
+    inline table_view& userdata_ephemeron() {
+        static table_view t = []() {
+            table_view result = ref::from_cpp(clg::state(), table{});
+            result.set_metatable(table{
+                {"__mode", clg::ref::from_cpp(clg::state(), "v")}
+            });
+            return result;
+        }();
+        return t;
+    }
+
     /**
      * @brief When extended from, allows to avoid extra overhead when passed to lua. Also allows lua code to use the
      * object as a table.
