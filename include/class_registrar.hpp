@@ -75,6 +75,7 @@ namespace clg {
         if (!helper->is_strong_ptr_stored()) {
             return;
         }
+        auto self = helper->as_lua_self();
     	impl::update_strong_userdata(*self, std::move(userdata));
     	auto b = helper->switch_to_weak();
     	assert(b);

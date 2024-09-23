@@ -2,8 +2,7 @@
 
 #include "lua.hpp"
 #include "converter.hpp"
-#include "value.hpp"
-#incldue "ref.hpp"
+#include "ref.hpp"
 
 
 namespace clg {
@@ -56,8 +55,8 @@ namespace clg {
     struct converter<clg::clg_userdata_view> {
         static converter_result<userdata_view> from_lua(lua_State* l, int n) {
             lua_pushvalue(l, n);
-            if (!is_clg_userdata(l, n)) {
-                return converter_error{"not a userdata"};
+            if (!impl::is_clg_userdata(l, n)) {
+                return converter_error{"not a clg userdata"};
             }
             return userdata_view(clg::ref::from_stack(l));
         }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "table.hpp"
-#include "ref.hpp"
+#include "table_view.hpp"
 
 namespace clg {
     class weak_ref {

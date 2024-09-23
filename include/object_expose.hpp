@@ -6,6 +6,7 @@
 #include "lua.hpp"
 #include "weak_ref.hpp"
 #include "table.hpp"
+#include "userdata_view.hpp"
 
 
 namespace clg {
@@ -13,36 +14,6 @@ namespace clg {
     namespace impl {
         inline void invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
         inline void update_strong_userdata(clg::lua_self& self, clg::ref value);
-
-        template<typename T>
-        static void push_new_userdata(lua_State* l, const std::shared_ptr<T>& v) {
-            clg::stack_integrity_check c(l, 1);
-            auto userdata = static_cast<userdata_helper*>(lua_newuserdata(l, sizeof(userdata_helper)));
-            new(userdata) userdata_helper(v);
-            if constexpr (std::is_polymorphic_v<T>) {
-                if (auto self = std::dynamic_pointer_cast<clg::lua_self>(v)) {
-                    assert(("lua self userdata should be initialized only once", !self->mInitialized));
-                    self->mUseCount = v;
-                    lua_pushvalue(l, -1);       // duplicate userdata
-                    self->mWeakUserdata.emplace(ref::from_stack(l));   // saving user data in a weak reference
-                    assert(!self->mWeakUserdata.lock().isNull());
-                    lua_createtable(l, 0, 0);   // create empty table
-                    lua_setuservalue(l, -2);    // setting uservalue (clg stores table with arbitrary lua data in uservalue slot)
-                    self->mInitialized = true;
-                }
-            }
-
-            clg::state_interface s(l);
-            auto clazz = s.global_variable(clg::class_name<T>());
-            assert(!clazz.isNull());
-            auto clazzMeta = clazz.metatable();
-            assert(!clazzMeta.isNull());
-            auto meta = clazzMeta.template as<table_view>()["__clg_metatable"].ref();
-            assert(!meta.isNull());
-            meta.push_value_to_stack(l);
-            assert(lua_type(l, -1) == LUA_TTABLE);
-            lua_setmetatable(l, -2);
-        }
     }
 
     namespace debug {
@@ -159,7 +130,7 @@ namespace clg {
                 return std::shared_ptr<T>(nullptr);
             }
 
-            if (!is_clg_userdata(l, n)) {
+            if (!impl::is_clg_userdata(l, n)) {
                 return clg::converter_error{"not a clg userdata"};
             }
 
@@ -169,6 +140,35 @@ namespace clg {
 
     template<typename T, typename EnableIf = void>
     struct converter_shared_ptr_impl_to {
+        static void push_new_userdata(lua_State* l, const std::shared_ptr<T>& v) {
+            clg::stack_integrity_check c(l, 1);
+            auto userdata = static_cast<userdata_helper*>(lua_newuserdata(l, sizeof(userdata_helper)));
+            new(userdata) userdata_helper(v);
+            if constexpr (std::is_polymorphic_v<T>) {
+                if (auto self = std::dynamic_pointer_cast<clg::lua_self>(v)) {
+                    assert(("lua self userdata should be initialized only once", !self->mInitialized));
+                    self->mUseCount = v;
+                    lua_pushvalue(l, -1);       // duplicate userdata
+                    self->mWeakUserdata.emplace(ref::from_stack(l));   // saving user data in a weak reference
+                    assert(!self->mWeakUserdata.lock().isNull());
+                    lua_createtable(l, 0, 0);   // create empty table
+                    lua_setuservalue(l, -2);    // setting uservalue (clg stores table with arbitrary lua data in uservalue slot)
+                    self->mInitialized = true;
+                }
+            }
+
+            clg::state_interface s(l);
+            auto clazz = s.global_variable(clg::class_name<T>());
+            assert(!clazz.isNull());
+            auto clazzMeta = clazz.metatable();
+            assert(!clazzMeta.isNull());
+            auto meta = clazzMeta.template as<table_view>()["__clg_metatable"].ref();
+            assert(!meta.isNull());
+            meta.push_value_to_stack(l);
+            assert(lua_type(l, -1) == LUA_TTABLE);
+            lua_setmetatable(l, -2);
+        }
+
         static int to_lua(lua_State* l, std::shared_ptr<T> v) {
             stack_integrity_check check(l, 1);
             if (v == nullptr) {
@@ -186,7 +186,7 @@ namespace clg {
 
                     if (!self->mInitialized) {
                         // userdata is not created yet, so create it and return
-                        impl::push_new_userdata(l, v);
+                        push_new_userdata(l, v);
                         return 1;
                     }
 
@@ -210,7 +210,7 @@ namespace clg {
             }
 
             // if we get there, we don't use lua self and we have to create new userdata each time
-            impl::push_new_userdata(l, v);
+            push_new_userdata(l, v);
             return 1;
         }
     };

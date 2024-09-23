@@ -76,9 +76,11 @@ namespace clg {
         using weak_ptr = std::weak_ptr<void>;
     public:
         template<typename T>
-        userdata_helper(const std::shared_ptr<T>& ptr) : mPtr(convert_to_void_p(ptr)), mType(typeid(T)),
-                                                mAsLuaSelf(std::dynamic_pointer_cast<lua_self>(ptr)),
-                                                mAsLuaInheritance(std::dynamic_pointer_cast<allow_lua_inheritance>(ptr)) {
+        userdata_helper(const std::shared_ptr<T>& ptr) : mPtr(convert_to_void_p(ptr)), mType(typeid(T)) {
+            if constexpr (std::is_polymorphic_v<T>) {
+                mAsLuaSelf = std::dynamic_pointer_cast<lua_self>(ptr);
+                mAsLuaInheritance = std::dynamic_pointer_cast<allow_lua_inheritance>(ptr);
+            }
         }
 
         bool expired() {
