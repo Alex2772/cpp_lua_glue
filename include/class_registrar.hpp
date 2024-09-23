@@ -61,19 +61,6 @@ namespace clg {
     	    auto b = helper->switch_to_weak(); // switching to weak_ptr to avoid cyclic links
     	    assert(b);
         }
-
-        template<typename C>
-        static void switch_to_registry_state_alive(lua_State* l, int index) {
-        	index = lua_absindex(l, index);
-      		auto helper = static_cast<userdata_helper*>(lua_touserdata(l, index));
-    		auto self = helper->as_lua_self();
-    		assert(self != nullptr);
-    		clg::state_interface s(l);
-    	    lua_pushvalue(l, index);
-    	    impl::update_strong_userdata(*self, clg::ref::from_stack(l));
-    	    auto b = helper->switch_to_weak();
-    	    assert(b);
-        }
     }
 
     /**
@@ -82,14 +69,15 @@ namespace clg {
 	*		this function helps to resolve these links (i.e. custom garbage collector cycle). You should force switching
 	*		to registry state every userdata that is not reachable in regular lua usage.
 	*/
-    inline void forceSwitchToRegistryState(const std::shared_ptr<void>& object) {
+    inline void forceSwitchToRegistryState(clg_userdata_view userdata) {
       	auto l = clg::state();
-    	clg::push_to_lua(l, object);
       	auto helper = static_cast<userdata_helper*>(lua_touserdata(l, -1));
         if (!helper->is_strong_ptr_stored()) {
             return;
         }
-    	impl::switch_to_registry_state_alive(l, -1);
+    	impl::update_strong_userdata(*self, std::move(userdata));
+    	auto b = helper->switch_to_weak();
+    	assert(b);
     }
 
     template<class C>
@@ -183,7 +171,7 @@ namespace clg {
                 lua_pop(l, 1);
                 // use lua_self for the userdata, memory management is not trivial in this case
                 if (!helper->expired() && !is_in_exit_handler()) {
-                    impl::switchToRegistryState(l, 1);
+                    impl::switch_to_registry_state_gc<C>(l, 1);
                 }
                 else {
                     // associated object is dead, helper is not needed anymore, call destructor of helper

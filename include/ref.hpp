@@ -376,6 +376,9 @@ namespace clg {
         }
     };
 
+    class clg_userdata_view : public userdata_view {
+    };
+
     template<>
     struct converter<clg::ref> {
         static converter_result<ref> from_lua(lua_State* l, int n) {
@@ -409,8 +412,22 @@ namespace clg {
     template<>
     struct converter<clg::userdata_view> {
         static converter_result<userdata_view> from_lua(lua_State* l, int n) {
-            lua_pushvalue(l, n);
-            if (!lua_isuserdata(l, -1)) {
+          	lua_pushvalue(l, n);
+            if (!lua_isuserdata(l, n)) {
+                return converter_error{"not a userdata"};
+            }
+            return userdata_view(clg::ref::from_stack(l));
+        }
+        static int to_lua(lua_State* l, const clg::ref& ref) {
+            return clg::push_to_lua(l, ref);
+        }
+    };
+
+    template<>
+    struct converter<clg::clg_userdata_view> {
+        static converter_result<userdata_view> from_lua(lua_State* l, int n) {
+          	lua_pushvalue(l, n);
+            if (!is_clg_userdata(l, n)) {
                 return converter_error{"not a userdata"};
             }
             return userdata_view(clg::ref::from_stack(l));

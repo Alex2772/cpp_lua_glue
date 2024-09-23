@@ -13,6 +13,36 @@ namespace clg {
     namespace impl {
         inline void invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
         inline void update_strong_userdata(clg::lua_self& self, clg::ref value);
+
+        template<typename T>
+        static void push_new_userdata(lua_State* l, const std::shared_ptr<T>& v) {
+            clg::stack_integrity_check c(l, 1);
+            auto userdata = static_cast<userdata_helper*>(lua_newuserdata(l, sizeof(userdata_helper)));
+            new(userdata) userdata_helper(v);
+            if constexpr (std::is_polymorphic_v<T>) {
+                if (auto self = std::dynamic_pointer_cast<clg::lua_self>(v)) {
+                    assert(("lua self userdata should be initialized only once", !self->mInitialized));
+                    self->mUseCount = v;
+                    lua_pushvalue(l, -1);       // duplicate userdata
+                    self->mWeakUserdata.emplace(ref::from_stack(l));   // saving user data in a weak reference
+                    assert(!self->mWeakUserdata.lock().isNull());
+                    lua_createtable(l, 0, 0);   // create empty table
+                    lua_setuservalue(l, -2);    // setting uservalue (clg stores table with arbitrary lua data in uservalue slot)
+                    self->mInitialized = true;
+                }
+            }
+
+            clg::state_interface s(l);
+            auto clazz = s.global_variable(clg::class_name<T>());
+            assert(!clazz.isNull());
+            auto clazzMeta = clazz.metatable();
+            assert(!clazzMeta.isNull());
+            auto meta = clazzMeta.template as<table_view>()["__clg_metatable"].ref();
+            assert(!meta.isNull());
+            meta.push_value_to_stack(l);
+            assert(lua_type(l, -1) == LUA_TTABLE);
+            lua_setmetatable(l, -2);
+        }
     }
 
     namespace debug {
@@ -46,7 +76,7 @@ namespace clg {
         friend void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
         friend void impl::update_strong_userdata(clg::lua_self& self, clg::ref value);
         template<typename T, typename EnableIf>
-        friend struct converter_shared_ptr_impl;
+        friend struct converter_shared_ptr_impl_to;
     public:
 
         clg::table_view luaDataHolder() const noexcept {
@@ -136,7 +166,7 @@ namespace clg {
      * userdata
      */
     template<typename T, typename EnableIf = void>
-    struct converter_shared_ptr_impl {
+    struct converter_shared_ptr_impl_from {
         static converter_result<std::shared_ptr<T>> from_lua(lua_State* l, int n) {
             if (lua_isnil(l, n)) {
                 return std::shared_ptr<T>(nullptr);
@@ -148,36 +178,10 @@ namespace clg {
 
             return static_cast<userdata_helper*>(lua_touserdata(l, n))->as<T>();
         }
+    };
 
-        static void push_new_userdata(lua_State* l, const std::shared_ptr<T>& v) {
-            clg::stack_integrity_check c(l, 1);
-            auto userdata = static_cast<userdata_helper*>(lua_newuserdata(l, sizeof(userdata_helper)));
-            new(userdata) userdata_helper(v);
-            if constexpr (std::is_polymorphic_v<T>) {
-                if (auto self = std::dynamic_pointer_cast<clg::lua_self>(v)) {
-                    assert(("lua self userdata should be initialized only once", !self->mInitialized));
-                    self->mUseCount = v;
-                    lua_pushvalue(l, -1);       // duplicate userdata
-                    self->mWeakUserdata.emplace(ref::from_stack(l));   // saving user data in a weak reference
-                    assert(!self->mWeakUserdata.lock().isNull());
-                    lua_createtable(l, 0, 0);   // create empty table
-                    lua_setuservalue(l, -2);    // setting uservalue (clg stores table with arbitrary lua data in uservalue slot)
-                    self->mInitialized = true;
-                }
-            }
-
-            clg::state_interface s(l);
-            auto clazz = s.global_variable(clg::class_name<T>());
-            assert(!clazz.isNull());
-            auto clazzMeta = clazz.metatable();
-            assert(!clazzMeta.isNull());
-            auto meta = clazzMeta.template as<table_view>()["__clg_metatable"].ref();
-            assert(!meta.isNull());
-            meta.push_value_to_stack(l);
-            assert(lua_type(l, -1) == LUA_TTABLE);
-            lua_setmetatable(l, -2);
-        }
-
+    template<typename T, typename EnableIf = void>
+    struct converter_shared_ptr_impl_to {
         static int to_lua(lua_State* l, std::shared_ptr<T> v) {
             stack_integrity_check check(l, 1);
             if (v == nullptr) {
@@ -187,7 +191,7 @@ namespace clg {
 
             if constexpr (std::is_polymorphic_v<T>) {
                 if (auto self = dynamic_cast<clg::lua_self*>(v.get())) {
-#if CLG_OBJECT_COUNTER
+#if CLG_OBJECT_COUNTERd_v
                     if (!self->mObjectCounter) {
                         self->mObjectCounter.emplace(self);
                     }
@@ -195,7 +199,7 @@ namespace clg {
 
                     if (!self->mInitialized) {
                         // userdata is not created yet, so create it and return
-                        push_new_userdata(l, v);
+                        impl::push_new_userdata(l, v);
                         return 1;
                     }
 
@@ -219,7 +223,7 @@ namespace clg {
             }
 
             // if we get there, we don't use lua self and we have to create new userdata each time
-            push_new_userdata(l, v);
+            impl::push_new_userdata(l, v);
             return 1;
         }
     };
@@ -228,7 +232,11 @@ namespace clg {
      * userdata
      */
     template<typename T, typename EnableIf = void>
-    struct converter_shared_ptr: public converter_shared_ptr_impl<T> {};
+    struct converter_shared_ptr : converter_shared_ptr_impl_from<T>,
+                                  converter_shared_ptr_impl_to<T, std::enable_if_t<!std::is_void_v<T>>> {};
+
+    template<typename T>
+    struct converter_shared_ptr<T, std::enable_if_t<std::is_void_v<T>>> : converter_shared_ptr_impl_from<T> {};
 
     /**
      * userdata
