@@ -149,19 +149,6 @@ namespace clg {
         self.mStrongUserdata = std::move(value);
     }
 
-    inline bool is_clg_userdata(lua_State* l, int idx) {
-      	if (!lua_isuserdata(l, idx)) {
-        	return false;
-        }
-        if (!lua_getmetatable(l, idx)) {
-            return false;
-        }
-        lua_pushstring(l, "__clg_methods");
-        bool result = lua_rawget(l, -2) != LUA_TNIL;
-        lua_pop(l, 2);
-        return result;
-    }
-
     /**
      * userdata
      */
