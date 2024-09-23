@@ -40,12 +40,10 @@ namespace clg {
             return clg::ref::from_stack(L);
         }
 
-        static void switch_to_registry_state(lua_State* l, int index) {
+        template<typename C>
+        static void switch_to_registry_state_gc(lua_State* l, int index) {
         	index = lua_absindex(l, index);
       		auto helper = static_cast<userdata_helper*>(lua_touserdata(l, index));
-        	if (!helper->is_strong_ptr_stored()) {
-            	return;
-        	}
     		auto self = helper->as_lua_self();
     		assert(self != nullptr);
     		clg::state_interface s(l);
@@ -63,6 +61,19 @@ namespace clg {
     	    auto b = helper->switch_to_weak(); // switching to weak_ptr to avoid cyclic links
     	    assert(b);
         }
+
+        template<typename C>
+        static void switch_to_registry_state_alive(lua_State* l, int index) {
+        	index = lua_absindex(l, index);
+      		auto helper = static_cast<userdata_helper*>(lua_touserdata(l, index));
+    		auto self = helper->as_lua_self();
+    		assert(self != nullptr);
+    		clg::state_interface s(l);
+    	    lua_pushvalue(l, index);
+    	    impl::update_strong_userdata(*self, clg::ref::from_stack(l));
+    	    auto b = helper->switch_to_weak();
+    	    assert(b);
+        }
     }
 
     /**
@@ -72,12 +83,13 @@ namespace clg {
 	*		to registry state every userdata that is not reachable in regular lua usage.
 	*/
     inline void forceSwitchToRegistryState(const std::shared_ptr<void>& object) {
-    	clg::push_to_lua(clg::state(), object);
+      	auto l = clg::state();
+    	clg::push_to_lua(l, object);
       	auto helper = static_cast<userdata_helper*>(lua_touserdata(l, -1));
         if (!helper->is_strong_ptr_stored()) {
             return;
         }
-    	switch_to_registry_state(l, index);
+    	impl::switch_to_registry_state_alive(l, -1);
     }
 
     template<class C>
