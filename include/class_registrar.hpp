@@ -40,6 +40,29 @@ namespace clg {
             return clg::ref::from_stack(L);
         }
 
+        static void switch_to_registry_state(lua_State* l, int index) {
+        	index = lua_absindex(l, index);
+      		auto helper = static_cast<userdata_helper*>(lua_touserdata(l, index));
+        	if (!helper->is_strong_ptr_stored()) {
+            	return;
+        	}
+    		auto self = helper->as_lua_self();
+    		assert(self != nullptr);
+    		clg::state_interface s(l);
+    		auto clazz = s.global_variable(clg::class_name<C>());
+    	    assert(!clazz.isNull());
+    	    auto clazzMeta = clazz.metatable();
+    	    assert(!clazzMeta.isNull());
+    	    auto meta = clazzMeta.template as<table_view>()["__clg_metatable"].ref();
+    	    assert(!meta.isNull());
+    	    meta.push_value_to_stack(l);
+    	    assert(lua_type(l, -1) == LUA_TTABLE);
+    	    lua_setmetatable(l, index); // restore metatable, mark object for re-finalization, see https://www.lua.org/manual/5.4/manual.html#2.5.3
+    	    lua_pushvalue(l, index);    // duplicate uservalue
+    	    impl::update_strong_userdata(*self, clg::ref::from_stack(l)); // save object in global registry, permanent resurrect
+    	    auto b = helper->switch_to_weak(); // switching to weak_ptr to avoid cyclic links
+    	    assert(b);
+        }
     }
 
     /**
@@ -48,28 +71,13 @@ namespace clg {
 	*		this function helps to resolve these links (i.e. custom garbage collector cycle). You should force switching
 	*		to registry state every userdata that is not reachable in regular lua usage.
 	*/
-    inline void forceSwitchToRegistry(lua_State* l, int index) {
-      	auto helper = static_cast<userdata_helper*>(lua_touserdata(l, index));
+    inline void forceSwitchToRegistryState(const std::shared_ptr<void>& object) {
+    	clg::push_to_lua(clg::state(), object);
+      	auto helper = static_cast<userdata_helper*>(lua_touserdata(l, -1));
         if (!helper->is_strong_ptr_stored()) {
             return;
         }
-    	auto self = helper->asLuaSelf();
-        assert(self != nullptr);
-
-        clg::state_interface s(l);
-        auto clazz = s.global_variable(clg::class_name<C>());
-        assert(!clazz.isNull());
-        auto clazzMeta = clazz.metatable();
-        assert(!clazzMeta.isNull());
-        auto meta = clazzMeta.template as<table_view>()["__clg_metatable"].ref();
-        assert(!meta.isNull());
-        meta.push_value_to_stack(l);
-        assert(lua_type(l, -1) == LUA_TTABLE);
-        lua_setmetatable(l, index); // restore metatable, mark object for re-finalization, see https://www.lua.org/manual/5.4/manual.html#2.5.3
-        lua_pushvalue(l, 1);    // duplicate uservalue
-        impl::update_strong_userdata(*self, clg::ref::from_stack(l)); // save object in global registry, permanent resurrect
-        auto b = helper->switch_to_weak(); // switching to weak_ptr to avoid cyclic links
-        assert(b);
+    	switch_to_registry_state(l, index);
     }
 
     template<class C>
@@ -163,23 +171,7 @@ namespace clg {
                 lua_pop(l, 1);
                 // use lua_self for the userdata, memory management is not trivial in this case
                 if (!helper->expired() && !is_in_exit_handler()) {
-                    auto self = helper->asLuaSelf();
-                    assert(self != nullptr);
-
-                    clg::state_interface s(l);
-                    auto clazz = s.global_variable(clg::class_name<C>());
-                    assert(!clazz.isNull());
-                    auto clazzMeta = clazz.metatable();
-                    assert(!clazzMeta.isNull());
-                    auto meta = clazzMeta.template as<table_view>()["__clg_metatable"].ref();
-                    assert(!meta.isNull());
-                    meta.push_value_to_stack(l);
-                    assert(lua_type(l, -1) == LUA_TTABLE);
-                    lua_setmetatable(l, 1); // restore metatable, mark object for re-finalization, see https://www.lua.org/manual/5.4/manual.html#2.5.3
-                    lua_pushvalue(l, 1);    // duplicate uservalue
-                    impl::update_strong_userdata(*self, clg::ref::from_stack(l)); // save object in global registry, permanent resurrect
-                    auto b = helper->switch_to_weak(); // switching to weak_ptr to avoid cyclic links
-                    assert(b);
+                    impl::switchToRegistryState(l, 1);
                 }
                 else {
                     // associated object is dead, helper is not needed anymore, call destructor of helper
@@ -285,7 +277,7 @@ namespace clg {
             if (lua_getuservalue(l, 1) != LUA_TTABLE) {
                 return luaL_error(l, "attempt to index clg userdata value without uservalue set (possibly not inherited from clg::lua_self)");
             }
-            auto self = userdata->asLuaSelf();
+            auto self = userdata->as_lua_self();
             lua_pushvalue(l, 2);    // push key
             lua_pushvalue(l, 3);    // push value
             lua_rawset(l, -3);      // add value to data holder table

@@ -25,24 +25,12 @@ namespace clg {
     [[nodiscard]]
     std::set<lua_self*>& object_counters();
 
-    inline table_view& userdata_ephemeron() {
-        static table_view t = []() {
-            table_view result = ref::from_cpp(clg::state(), table{});
-            result.set_metatable(table{
-                {"__mode", clg::ref::from_cpp(clg::state(), "k")}
-            });
-            return result;
-        }();
-        return t;
-    }
-
     /**
      * @brief When extended from, allows to avoid extra overhead when passed to lua. Also allows lua code to use the
      * object as a table.
-     * @tparam T The derived type (see example)
      * @details
      * @code{cpp}
-     * class Person: clg::lua_self<Person> {
+     * class Person: clg::lua_self {
      * public:
      *   // ...
      * };
@@ -132,13 +120,16 @@ namespace clg {
     }
 
     inline bool is_clg_userdata(lua_State* l, int idx) {
-        if (lua_getmetatable(l, idx)) {
-            lua_pushstring(l, "__clg_methods");
-            bool result = lua_rawget(l, -2) != LUA_TNIL;
-            lua_pop(l, 2);
-            return result;
+      	if (!lua_isuserdata(l, idx)) {
+        	return false;
         }
-        return false;
+        if (!lua_getmetatable(l, idx)) {
+            return false;
+        }
+        lua_pushstring(l, "__clg_methods");
+        bool result = lua_rawget(l, -2) != LUA_TNIL;
+        lua_pop(l, 2);
+        return result;
     }
 
     /**
@@ -155,11 +146,7 @@ namespace clg {
                 return clg::converter_error{"not a clg userdata"};
             }
 
-            if (lua_isuserdata(l, n)) {
-                return static_cast<userdata_helper*>(lua_touserdata(l, n))->as<T>();
-            }
-
-            return clg::converter_error{"not a userdata"};
+            return static_cast<userdata_helper*>(lua_touserdata(l, n))->as<T>();
         }
 
         static void push_new_userdata(lua_State* l, const std::shared_ptr<T>& v) {
@@ -175,7 +162,6 @@ namespace clg {
                     assert(!self->mWeakUserdata.lock().isNull());
                     lua_createtable(l, 0, 0);   // create empty table
                     lua_setuservalue(l, -2);    // setting uservalue (clg stores table with arbitrary lua data in uservalue slot)
-                    userdata->setAsLuaSelf(self);
                     self->mInitialized = true;
                 }
             }
