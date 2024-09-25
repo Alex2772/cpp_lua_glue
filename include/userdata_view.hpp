@@ -13,10 +13,11 @@ namespace clg {
         userdata_view(ref r) : ref(std::move(r)) {
         }
 
-        userdata_helper* asUserdataHelper() {
+        userdata_helper* get_userdata_helper() {
             clg::stack_integrity_check check;
             auto l = clg::state();
             push_value_to_stack(l);
+            assert(!lua_isnil(l, -1));
             auto res = static_cast<userdata_helper*>(lua_touserdata(l, -1));
             lua_pop(l, 1);
             return res;
@@ -53,7 +54,7 @@ namespace clg {
 
     template<>
     struct converter<clg::clg_userdata_view> {
-        static converter_result<userdata_view> from_lua(lua_State* l, int n) {
+        static converter_result<clg_userdata_view> from_lua(lua_State* l, int n) {
             lua_pushvalue(l, n);
             if (!impl::is_clg_userdata(l, n)) {
                 return converter_error{"not a clg userdata"};

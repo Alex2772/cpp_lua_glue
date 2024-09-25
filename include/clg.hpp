@@ -313,8 +313,17 @@ namespace clg {
     class vm: public state_interface, impl::raii_state_updater {
     public:
         vm(): state_interface(luaL_newstate()), impl::raii_state_updater(state_interface::operator lua_State *()) {
-            luaL_openlibs(*this);
+            lua_State* l = *this;
+            luaL_openlibs(l);
             init_global_functions();
+            lua_pushstring(l, "userdata_ephemeron");
+            lua_newtable(l);
+            lua_newtable(l);
+            lua_pushstring(l, "__mode");
+            lua_pushstring(l, "k");
+            lua_rawset(l, -3);
+            lua_setmetatable(l, -2);
+            lua_rawset(l, LUA_REGISTRYINDEX);
         }
         ~vm() {
             function::error_callback() = {};
@@ -418,4 +427,5 @@ void clg::ref::invokeNullsafe(Args&& ... args) {
 
 inline void clg::state_interface::init_global_functions() {
     register_class<any_wrap>();
+    register_function<forceSwitchToRegistryState>("forceSwitchToRegistryState");
 }

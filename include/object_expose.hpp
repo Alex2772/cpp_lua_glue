@@ -14,6 +14,16 @@ namespace clg {
     namespace impl {
         inline void invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
         inline void update_strong_userdata(clg::lua_self& self, clg::ref value);
+
+        inline void push_to_userdata_ephemeron(lua_State* l, int index) {
+            index = lua_absindex(l, index);
+            lua_pushstring(l, "userdata_ephemeron");
+            lua_rawget(l, LUA_REGISTRYINDEX);
+            lua_pushvalue(l, index);
+            lua_pushboolean(l, true);
+            lua_rawset(l, -3);
+            lua_pop(l, 1);
+        }
     }
 
     namespace debug {
@@ -120,6 +130,27 @@ namespace clg {
         self.mStrongUserdata = std::move(value);
     }
 
+
+    /**
+    * @brief Forces changing clg userdata state to registry state
+    * @note clg at the moment can't handle registry links to clg userdata properly, it may lead to memory links,
+    *		this function helps to resolve these links (e.g. using custom garbage collector cycle).
+    *		You should force switching to registry state every userdata that is not reachable in regular lua usage.
+    */
+    inline void forceSwitchToRegistryState(clg_userdata_view userdata) {
+        auto helper = userdata.get_userdata_helper();
+        if (!helper->is_strong_ptr_stored()) {
+            return;
+        }
+        auto self = helper->as_lua_self();
+        if (!self) {
+            return;
+        }
+        impl::update_strong_userdata(*self, std::move(userdata));
+        auto b = helper->switch_to_weak();
+        assert(b);
+    }
+
     /**
      * userdata
      */
@@ -143,6 +174,7 @@ namespace clg {
         static void push_new_userdata(lua_State* l, const std::shared_ptr<T>& v) {
             clg::stack_integrity_check c(l, 1);
             auto userdata = static_cast<userdata_helper*>(lua_newuserdata(l, sizeof(userdata_helper)));
+            impl::push_to_userdata_ephemeron(l, -1);
             new(userdata) userdata_helper(v);
             if constexpr (std::is_polymorphic_v<T>) {
                 if (auto self = std::dynamic_pointer_cast<clg::lua_self>(v)) {
@@ -193,6 +225,7 @@ namespace clg {
                     if (!self->mStrongUserdata.isNull()) {
                         // in this case, at the moment userdata is unreachable in regular lua usage and stores only in lua registry
                         self->mStrongUserdata.push_value_to_stack(l);
+                        impl::push_to_userdata_ephemeron(l, -1);
                         auto helper = static_cast<userdata_helper*>(lua_touserdata(l, -1));
                         assert(helper != nullptr);
                         auto b = helper->switch_to_shared();

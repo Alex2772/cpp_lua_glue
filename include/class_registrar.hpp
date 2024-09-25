@@ -63,24 +63,6 @@ namespace clg {
         }
     }
 
-    /**
-	* @brief Forces changing clg userdata state to registry state
-	* @note clg at the moment can't handle registry links to clg userdata properly, it may lead to memory links,
-	*		this function helps to resolve these links (e.g. using custom garbage collector cycle).
-	*		You should force switching to registry state every userdata that is not reachable in regular lua usage.
-	*/
-    inline void forceSwitchToRegistryState(clg_userdata_view userdata) {
-      	auto l = clg::state();
-      	auto helper = static_cast<userdata_helper*>(lua_touserdata(l, -1));
-        if (!helper->is_strong_ptr_stored()) {
-            return;
-        }
-        auto self = helper->as_lua_self();
-    	impl::update_strong_userdata(*self, std::move(userdata));
-    	auto b = helper->switch_to_weak();
-    	assert(b);
-    }
-
     template<class C>
     class class_registrar {
     friend class clg::state_interface;
