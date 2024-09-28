@@ -210,7 +210,7 @@ namespace clg {
 
             if constexpr (std::is_polymorphic_v<T>) {
                 if (auto self = dynamic_cast<clg::lua_self*>(v.get())) {
-#if CLG_OBJECT_COUNTERd_v
+#if CLG_OBJECT_COUNTER
                     if (!self->mObjectCounter) {
                         self->mObjectCounter.emplace(self);
                     }
