@@ -174,7 +174,9 @@ namespace clg {
         static void push_new_userdata(lua_State* l, const std::shared_ptr<T>& v) {
             clg::stack_integrity_check c(l, 1);
             auto userdata = static_cast<userdata_helper*>(lua_newuserdata(l, sizeof(userdata_helper)));
+#ifdef CLG_ENABLE_USERDATA_EPHEMERON
             impl::push_to_userdata_ephemeron(l, -1);
+#endif
             new(userdata) userdata_helper(v);
             if constexpr (std::is_polymorphic_v<T>) {
                 if (auto self = std::dynamic_pointer_cast<clg::lua_self>(v)) {
@@ -225,7 +227,9 @@ namespace clg {
                     if (!self->mStrongUserdata.isNull()) {
                         // in this case, at the moment userdata is unreachable in regular lua usage and stores only in lua registry
                         self->mStrongUserdata.push_value_to_stack(l);
+#ifdef CLG_ENABLE_USERDATA_EPHEMERON
                         impl::push_to_userdata_ephemeron(l, -1);
+#endif
                         auto helper = static_cast<userdata_helper*>(lua_touserdata(l, -1));
                         assert(helper != nullptr);
                         auto b = helper->switch_to_shared();

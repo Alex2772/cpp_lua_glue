@@ -29,6 +29,17 @@ namespace clg {
             std::string name;
             lua_CFunction cFunction;
         };
+
+        void init_userdata_ephemeron(lua_State* l) {
+            lua_pushstring(l, "userdata_ephemeron");
+            lua_newtable(l);
+            lua_newtable(l);
+            lua_pushstring(l, "__mode");
+            lua_pushstring(l, "k");
+            lua_rawset(l, -3);
+            lua_setmetatable(l, -2);
+            lua_rawset(l, LUA_REGISTRYINDEX);
+        }
     }
     using lua_cfunctions = std::vector<impl::Method>;
 
@@ -316,14 +327,9 @@ namespace clg {
             lua_State* l = *this;
             luaL_openlibs(l);
             init_global_functions();
-            lua_pushstring(l, "userdata_ephemeron");
-            lua_newtable(l);
-            lua_newtable(l);
-            lua_pushstring(l, "__mode");
-            lua_pushstring(l, "k");
-            lua_rawset(l, -3);
-            lua_setmetatable(l, -2);
-            lua_rawset(l, LUA_REGISTRYINDEX);
+#ifdef CLG_ENABLE_USERDATA_EPHEMERON
+            init_userdata_ephemeron(l);
+#endif
         }
         ~vm() {
             function::error_callback() = {};
