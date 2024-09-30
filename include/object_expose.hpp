@@ -6,6 +6,7 @@
 #include "lua.hpp"
 #include "weak_ref.hpp"
 #include "table.hpp"
+#include "userdata_view.hpp"
 
 
 namespace clg {
@@ -13,6 +14,16 @@ namespace clg {
     namespace impl {
         inline void invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
         inline void update_strong_userdata(clg::lua_self& self, clg::ref value);
+
+        inline void push_to_userdata_ephemeron(lua_State* l, int index) {
+            index = lua_absindex(l, index);
+            lua_pushstring(l, "userdata_ephemeron");
+            lua_rawget(l, LUA_REGISTRYINDEX);
+            lua_pushvalue(l, index);
+            lua_pushboolean(l, true);
+            lua_rawset(l, -3);
+            lua_pop(l, 1);
+        }
     }
 
     namespace debug {
@@ -28,10 +39,9 @@ namespace clg {
     /**
      * @brief When extended from, allows to avoid extra overhead when passed to lua. Also allows lua code to use the
      * object as a table.
-     * @tparam T The derived type (see example)
      * @details
      * @code{cpp}
-     * class Person: clg::lua_self<Person> {
+     * class Person: clg::lua_self {
      * public:
      *   // ...
      * };
@@ -47,7 +57,7 @@ namespace clg {
         friend void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
         friend void impl::update_strong_userdata(clg::lua_self& self, clg::ref value);
         template<typename T, typename EnableIf>
-        friend struct converter_shared_ptr_impl;
+        friend struct converter_shared_ptr_impl_to;
     public:
 
         clg::table_view luaDataHolder() const noexcept {
@@ -120,40 +130,53 @@ namespace clg {
         self.mStrongUserdata = std::move(value);
     }
 
-    inline bool is_clg_userdata(lua_State* l, int idx) {
-        if (lua_getmetatable(l, idx)) {
-            lua_pushstring(l, "__clg_methods");
-            bool result = lua_rawget(l, -2) != LUA_TNIL;
-            lua_pop(l, 2);
-            return result;
+
+    /**
+    * @brief Forces changing clg userdata state to registry state
+    * @note clg at the moment can't handle registry links to clg userdata properly, it may lead to memory links,
+    *		this function helps to resolve these links (e.g. using custom garbage collector cycle).
+    *		You should force switching to registry state every userdata that is not reachable in regular lua usage.
+    */
+    inline void force_switch_to_registry_state(clg_userdata_view userdata) {
+        auto helper = userdata.get_userdata_helper();
+        if (!helper->is_strong_ptr_stored()) {
+            return;
         }
-        return false;
+        auto self = helper->as_lua_self();
+        if (!self) {
+            return;
+        }
+        impl::update_strong_userdata(*self, std::move(userdata));
+        auto b = helper->switch_to_weak();
+        assert(b);
     }
 
     /**
      * userdata
      */
     template<typename T, typename EnableIf = void>
-    struct converter_shared_ptr_impl {
+    struct converter_shared_ptr_impl_from {
         static converter_result<std::shared_ptr<T>> from_lua(lua_State* l, int n) {
             if (lua_isnil(l, n)) {
                 return std::shared_ptr<T>(nullptr);
             }
 
-            if (!is_clg_userdata(l, n)) {
+            if (!impl::is_clg_userdata(l, n)) {
                 return clg::converter_error{"not a clg userdata"};
             }
 
-            if (lua_isuserdata(l, n)) {
-                return static_cast<userdata_helper*>(lua_touserdata(l, n))->as<T>();
-            }
-
-            return clg::converter_error{"not a userdata"};
+            return static_cast<userdata_helper*>(lua_touserdata(l, n))->as<T>();
         }
+    };
 
+    template<typename T, typename EnableIf = void>
+    struct converter_shared_ptr_impl_to {
         static void push_new_userdata(lua_State* l, const std::shared_ptr<T>& v) {
             clg::stack_integrity_check c(l, 1);
             auto userdata = static_cast<userdata_helper*>(lua_newuserdata(l, sizeof(userdata_helper)));
+#ifdef CLG_ENABLE_USERDATA_EPHEMERON
+            impl::push_to_userdata_ephemeron(l, -1);
+#endif
             new(userdata) userdata_helper(v);
             if constexpr (std::is_polymorphic_v<T>) {
                 if (auto self = std::dynamic_pointer_cast<clg::lua_self>(v)) {
@@ -164,7 +187,6 @@ namespace clg {
                     assert(!self->mWeakUserdata.lock().isNull());
                     lua_createtable(l, 0, 0);   // create empty table
                     lua_setuservalue(l, -2);    // setting uservalue (clg stores table with arbitrary lua data in uservalue slot)
-                    userdata->setAsLuaSelf(self);
                     self->mInitialized = true;
                 }
             }
@@ -205,6 +227,9 @@ namespace clg {
                     if (!self->mStrongUserdata.isNull()) {
                         // in this case, at the moment userdata is unreachable in regular lua usage and stores only in lua registry
                         self->mStrongUserdata.push_value_to_stack(l);
+#ifdef CLG_ENABLE_USERDATA_EPHEMERON
+                        impl::push_to_userdata_ephemeron(l, -1);
+#endif
                         auto helper = static_cast<userdata_helper*>(lua_touserdata(l, -1));
                         assert(helper != nullptr);
                         auto b = helper->switch_to_shared();
@@ -231,7 +256,11 @@ namespace clg {
      * userdata
      */
     template<typename T, typename EnableIf = void>
-    struct converter_shared_ptr: public converter_shared_ptr_impl<T> {};
+    struct converter_shared_ptr : converter_shared_ptr_impl_from<T>,
+                                  converter_shared_ptr_impl_to<T, std::enable_if_t<!std::is_void_v<T>>> {};
+
+    template<typename T>
+    struct converter_shared_ptr<T, std::enable_if_t<std::is_void_v<T>>> : converter_shared_ptr_impl_from<T> {};
 
     /**
      * userdata

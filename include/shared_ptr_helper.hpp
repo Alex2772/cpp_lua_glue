@@ -76,7 +76,11 @@ namespace clg {
         using weak_ptr = std::weak_ptr<void>;
     public:
         template<typename T>
-        userdata_helper(std::shared_ptr<T> ptr) : mPtr(convert_to_void_p(std::move(ptr))), mType(typeid(T)) {
+        userdata_helper(const std::shared_ptr<T>& ptr) : mPtr(convert_to_void_p(ptr)), mType(typeid(T)) {
+            if constexpr (std::is_polymorphic_v<T>) {
+                mAsLuaSelf = std::dynamic_pointer_cast<lua_self>(ptr);
+                mAsLuaInheritance = std::dynamic_pointer_cast<allow_lua_inheritance>(ptr);
+            }
         }
 
         bool expired() {
@@ -84,6 +88,10 @@ namespace clg {
                 return weak->expired();
             }
             return false;
+        }
+
+        bool is_strong_ptr_stored() const noexcept {
+            return std::holds_alternative<shared_ptr>(mPtr);
         }
 
         template<typename T>
@@ -97,15 +105,20 @@ namespace clg {
                     return v.lock();
                 }
             }, mPtr);
-            if constexpr (std::is_base_of_v<allow_lua_inheritance, T>) {
-                auto inheritance = reinterpret_cast<const std::shared_ptr<allow_lua_inheritance>&>(ptr);
-                return std::dynamic_pointer_cast<T>(inheritance);
+
+            if constexpr (std::is_void_v<T>) {
+                return ptr;
             }
             else {
+                if (auto inheritance = mAsLuaInheritance.lock()) {
+                    return std::dynamic_pointer_cast<T>(inheritance);
+                }
+
                 if (auto& expected = typeid(T); expected != mType) {
                     static std::string e = std::string("type mismatch: expected ") + expected.name() + "\nnote: extend clg::allow_lua_inheritance to allow inheritance";
                     return converter_error{e.c_str()};
                 }
+
                 return reinterpret_cast<const std::shared_ptr<T>&>(ptr);
             }
         }
@@ -128,11 +141,7 @@ namespace clg {
             return false;
         }
 
-        void setAsLuaSelf(std::weak_ptr<lua_self> ptr) {
-            mAsLuaSelf = std::move(ptr);
-        }
-
-        std::shared_ptr<lua_self> asLuaSelf() {
+        std::shared_ptr<lua_self> as_lua_self() const noexcept {
             return mAsLuaSelf.lock();
         }
 
@@ -140,6 +149,7 @@ namespace clg {
         std::variant<shared_ptr, weak_ptr> mPtr;
         const std::type_info& mType;
         std::weak_ptr<lua_self> mAsLuaSelf;
+        std::weak_ptr<allow_lua_inheritance> mAsLuaInheritance;
 
         template<typename T>
         std::shared_ptr<void> convert_to_void_p(std::shared_ptr<T> ptr) {

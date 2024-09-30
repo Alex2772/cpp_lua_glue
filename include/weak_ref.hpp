@@ -1,7 +1,7 @@
 #pragma once
 
 #include "table.hpp"
-#include "ref.hpp"
+#include "table_view.hpp"
 
 namespace clg {
     class weak_ref {
@@ -17,9 +17,6 @@ namespace clg {
             if (mWrapperObject.isNull()) {
                 mWrapperObject.set_metatable(clg::table{
                     { "__mode", clg::ref::from_cpp(l, "v") }, // weak reference mode for mWrapperObject's values
-                });
-                mWrapperObject.set_metatable(clg::table{
-                        {"__mode", clg::ref::from_cpp(l, "v")} // weak reference mode for mWrapperObject's values
                 });
             }
             mWrapperObject.raw_set("value", r);
