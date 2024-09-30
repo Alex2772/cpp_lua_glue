@@ -433,5 +433,4 @@ void clg::ref::invokeNullsafe(Args&& ... args) {
 
 inline void clg::state_interface::init_global_functions() {
     register_class<any_wrap>();
-    register_function<forceSwitchToRegistryState>("forceSwitchToRegistryState");
 }

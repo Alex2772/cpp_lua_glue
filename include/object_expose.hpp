@@ -137,7 +137,7 @@ namespace clg {
     *		this function helps to resolve these links (e.g. using custom garbage collector cycle).
     *		You should force switching to registry state every userdata that is not reachable in regular lua usage.
     */
-    inline void forceSwitchToRegistryState(clg_userdata_view userdata) {
+    inline void force_switch_to_registry_state(clg_userdata_view userdata) {
         auto helper = userdata.get_userdata_helper();
         if (!helper->is_strong_ptr_stored()) {
             return;
