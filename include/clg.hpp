@@ -30,7 +30,8 @@ namespace clg {
             lua_CFunction cFunction;
         };
 
-        void init_userdata_ephemeron(lua_State* l) {
+#ifdef CLG_ENABLE_USERDATA_EPHEMERON
+        static void init_userdata_ephemeron(lua_State* l) {
             lua_pushstring(l, "userdata_ephemeron");
             lua_newtable(l);
             lua_newtable(l);
@@ -40,6 +41,7 @@ namespace clg {
             lua_setmetatable(l, -2);
             lua_rawset(l, LUA_REGISTRYINDEX);
         }
+#endif
     }
     using lua_cfunctions = std::vector<impl::Method>;
 
