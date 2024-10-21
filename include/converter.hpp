@@ -36,7 +36,13 @@ namespace clg {
                     return static_cast<T>(lua_toboolean(l, n));
                 }
                 if (lua_isnumber(l, n)) {
-                    return static_cast<T>(lua_tonumber(l, n));
+                    auto v = lua_tonumber(l, n);
+                    if constexpr (std::is_integral_v<T>) {
+                        // arm cpu might convert (double)-1 to uint32_t poorly.
+                        auto i64 = static_cast<int64_t>(v);
+                        return static_cast<T>(i64);
+                    }
+                    return static_cast<T>(v);
                 }
                 return converter_error{"not a number"};
             }
