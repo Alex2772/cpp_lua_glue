@@ -12,10 +12,10 @@
 namespace clg {
     class lua_self;
     namespace impl {
-        inline void invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
-        inline void update_strong_userdata(clg::lua_self& self, clg::ref value);
+        static void invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value);
+        static void update_strong_userdata(clg::lua_self& self, clg::ref value);
 
-        inline void push_to_userdata_ephemeron(lua_State* l, int index) {
+        static void push_to_userdata_ephemeron(lua_State* l, int index) {
             index = lua_absindex(l, index);
             lua_pushstring(l, "userdata_ephemeron");
             lua_rawget(l, LUA_REGISTRYINDEX);
@@ -27,7 +27,7 @@ namespace clg {
     }
 
     namespace debug {
-        inline std::function<void(const clg::ref&)>& on_object_created() {
+        static std::function<void(const clg::ref&)>& on_object_created() {
             static std::function<void(const clg::ref&)> v;
             return v;
         };
@@ -76,6 +76,8 @@ namespace clg {
             return mUseCount.use_count();
         }
 
+        virtual void clg_notify_switch_to_registry_state() {}
+
     protected:
 
         clg::userdata_view luaSelf() const noexcept {
@@ -91,6 +93,7 @@ namespace clg {
         }
 
         virtual void handle_lua_virtual_func_assignment(std::string_view name, clg::ref value) {}
+
 
     private:
 
@@ -120,11 +123,11 @@ namespace clg {
         std::optional<ObjectCounter> mObjectCounter;
 #endif
     };
-    inline void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value) {
+    static void impl::invoke_handle_lua_virtual_func_assignment(clg::lua_self& s, std::string_view name, clg::ref value) {
         s.handle_lua_virtual_func_assignment(name, std::move(value));
     }
 
-    inline void impl::update_strong_userdata(clg::lua_self& self, clg::ref value) {
+    static void impl::update_strong_userdata(clg::lua_self& self, clg::ref value) {
         assert(!value.isNull());
         assert(self.mStrongUserdata.isNull());
         self.mStrongUserdata = std::move(value);
@@ -137,7 +140,7 @@ namespace clg {
     *		this function helps to resolve these links (e.g. using custom garbage collector cycle).
     *		You should force switching to registry state every userdata that is not reachable in regular lua usage.
     */
-    inline void force_switch_to_registry_state(clg_userdata_view userdata) {
+    static void force_switch_to_registry_state(clg_userdata_view userdata) {
         auto helper = userdata.get_userdata_helper();
         if (!helper->is_strong_ptr_stored()) {
             return;
@@ -147,6 +150,7 @@ namespace clg {
             return;
         }
         impl::update_strong_userdata(*self, std::move(userdata));
+        self->clg_notify_switch_to_registry_state();
         auto b = helper->switch_to_weak();
         assert(b);
     }

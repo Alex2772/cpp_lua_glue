@@ -58,6 +58,7 @@ namespace clg {
     	    lua_setmetatable(l, index); // restore metatable, mark object for re-finalization, see https://www.lua.org/manual/5.4/manual.html#2.5.3
     	    lua_pushvalue(l, index);    // duplicate uservalue
     	    impl::update_strong_userdata(*self, clg::ref::from_stack(l)); // save object in global registry, permanent resurrect
+//            self->clg_notify_switch_to_registry_state();
     	    auto b = helper->switch_to_weak(); // switching to weak_ptr to avoid cyclic links
     	    assert(b);
         }
@@ -159,12 +160,14 @@ namespace clg {
                 else {
                     // associated object is dead, helper is not needed anymore, call destructor of helper
                     helper->~userdata_helper();
+                    std::memset(helper, 0, sizeof(*helper));
                 }
             }
             else {
                 lua_pop(l, 1);
                 // just call destructor of helper
                 helper->~userdata_helper();
+                std::memset(helper, 0, sizeof(*helper));
             }
 
             return 0;
