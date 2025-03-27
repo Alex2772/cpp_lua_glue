@@ -268,7 +268,7 @@ namespace clg {
             lua_pushvalue(l, 3);    // push value
             lua_rawset(l, -3);      // add value to data holder table
             lua_pop(l, 1);          // pop data holder table
-            if (lua_isstring(l, 2) && lua_isfunction(l, 3)) {
+            if (lua_isstring(l, 2)) {
                 lua_pushvalue(l, 3);
                 impl::invoke_handle_lua_virtual_func_assignment(*self, lua_tostring(l, 2), clg::ref::from_stack(l));
             }
