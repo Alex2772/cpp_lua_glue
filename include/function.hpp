@@ -42,10 +42,6 @@ namespace clg {
             }
             const auto L = clg::state();
             push_function_to_be_called();
-            if (!lua_isfunction(L, -1)) {
-                lua_pop(L, 1);
-                return;
-            }
             push(std::forward<Args>(args)...);
             do_call(sizeof...(args), 0);
         }
