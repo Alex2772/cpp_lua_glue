@@ -38,11 +38,18 @@ namespace clg {
             for (auto i = 0; i < s; ++i) {
                 auto r = clg::get_from_lua_raw<clg::ref>(state, i + 1);
                 if (r.is_error()) {
+                    // Defensive: keep stack management symmetric with the
+                    // success-path lua_pop below. get_from_lua_raw<clg::ref>
+                    // is stack-neutral (lua_pushvalue + luaL_ref pair), so
+                    // the original `s` items remain at indices 1..s and need
+                    // to be popped before returning the error.
+                    lua_pop(state, s);
                     return r.error();
                 }
                 result.mData.push_back(std::move(*r));
             }
             lua_pop(result.mState, s);
+            return result;
         }
 
         ~dynamic_result() {
