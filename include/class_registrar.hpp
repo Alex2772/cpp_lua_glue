@@ -264,6 +264,17 @@ namespace clg {
                 return luaL_error(l, "attempt to index clg userdata value without uservalue set (possibly not inherited from clg::lua_self)");
             }
             auto self = userdata->as_lua_self();
+            if (!self) {
+                // C++ object behind userdata is destroyed (weak_ptr expired).
+                // Surface as Lua error (caught by surrounding xpcall) so the
+                // callsite traceback identifies the dangling reference, instead
+                // of access-violation on *nullptr at invoke_handle_lua_virtual_func_assignment.
+                // Lua resets the C stack on longjmp from luaL_error, so leaving
+                // the uservalue table on the stack is fine (same pattern as the
+                // luaL_error calls at lines ~258, ~264 above).
+                return luaL_error(l, "newindex on destroyed C++ object (key=%s)",
+                                  lua_isstring(l, 2) ? lua_tostring(l, 2) : "<non-string>");
+            }
             lua_pushvalue(l, 2);    // push key
             lua_pushvalue(l, 3);    // push value
             lua_rawset(l, -3);      // add value to data holder table
