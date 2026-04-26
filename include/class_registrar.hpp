@@ -45,7 +45,19 @@ namespace clg {
         	index = lua_absindex(l, index);
       		auto helper = static_cast<userdata_helper*>(lua_touserdata(l, index));
     		auto self = helper->as_lua_self();
-    		assert(self != nullptr);
+    		if (!self) {
+    		    // Defensive: gc() above only calls us when helper->expired()
+    		    // is false, but in a multi-threaded scenario the weak_ptr
+    		    // could in principle expire between that check and this
+    		    // lock(). Mirror the parallel branch in gc() — explicitly
+    		    // destroy the helper so its variant<weak_ptr, shared_ptr>
+    		    // doesn't leak when Lua frees the userdata bytes after we
+    		    // return. Single-threaded clients never hit this; included
+    		    // for correctness only.
+    		    helper->~userdata_helper();
+    		    std::memset(helper, 0, sizeof(*helper));
+    		    return;
+    		}
     		clg::state_interface s(l);
     		auto clazz = s.global_variable(clg::class_name<C>());
     	    assert(!clazz.isNull());
