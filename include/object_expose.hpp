@@ -87,9 +87,13 @@ namespace clg {
             if (!mStrongUserdata.isNull()) {
                 return mStrongUserdata;
             }
-            auto res = mWeakUserdata.lock();
-            assert(("lua self userdata must exist after its initialization", !res.isNull()));
-            return res;
+            // mWeakUserdata.lock() can return null if Lua GC collected the
+            // userdata while the C++ object was alive. Previously this hit
+            // an assert() (no-op in release) and the null view propagated
+            // to callers that dereferenced it. Callers now must null-check
+            // (luaDataHolder() already does at line 65; converter
+            // to_lua() in this file does at the new luaL_error site below).
+            return mWeakUserdata.lock();
         }
 
         virtual void handle_lua_virtual_func_assignment(std::string_view name, clg::ref value) {}
@@ -245,7 +249,19 @@ namespace clg {
                     }
 
                     // otherwise, we have already userdata in lua, push it using weak reference
-                    self->luaSelf().push_value_to_stack(l);
+                    auto luaSelfView = self->luaSelf();
+                    if (luaSelfView.isNull()) {
+                        // mInitialized is true and mStrongUserdata is null
+                        // (checked above), so we expected mWeakUserdata.lock()
+                        // to succeed. If it didn't, Lua GC collected the
+                        // userdata while the C++ object was still alive.
+                        // Surface as Lua error so the surrounding xpcall
+                        // captures a traceback identifying the offending
+                        // C++ object, instead of silently pushing nil and
+                        // confusing downstream Lua code.
+                        return luaL_error(l, "C++ object's Lua userdata has been garbage collected");
+                    }
+                    luaSelfView.push_value_to_stack(l);
                     return 1;
                 }
             }
